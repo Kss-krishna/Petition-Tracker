@@ -821,8 +821,8 @@ def resolve_efile_no_for_action(petition, incoming_efile_no, required_message=No
     incoming = (incoming_efile_no or '').strip()
 
     if existing_efile:
-        if incoming and incoming != existing_efile:
-            return None, 'E-Office File No is already set. Editing is not allowed.'
+        # When e-file is already set, downstream actions should always reuse it.
+        # Ignore client-posted differences here; dedicated edit action enforces immutability.
         return existing_efile, None
 
     if not incoming:

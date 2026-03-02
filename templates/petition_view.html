@@ -671,12 +671,12 @@
 
                 {% if petition.status == 'enquiry_report_submitted' %}
                 <div class="action-panel">
-                    <h4>CVO Next Step</h4>
+                    <h4 data-i18n="petition.view.cvo_next_step">CVO Next Step</h4>
                     <div class="form-group">
-                        <label>Select Action</label>
+                        <label data-i18n="petition.view.select_action">Select Action</label>
                         <select id="cvo_next_step_selector" onchange="toggleCvoNextStepFields()">
-                            <option value="forward">Forward to PO</option>
-                            <option value="reenquiry">Send Back for Re-enquiry</option>
+                            <option value="forward" data-i18n="petition.view.forward_to_po">Forward to PO</option>
+                            <option value="reenquiry" data-i18n="petition.view.send_back_reenquiry">Send Back for Re-enquiry</option>
                         </select>
                     </div>
 
@@ -693,9 +693,9 @@
                         <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}">
                             <input type="hidden" name="action" value="cvo_send_back_reenquiry">
                             <div class="form-group">
-                                <label>Select Inspector (CI/SI) <span class="required">*</span></label>
+                                <label><span data-i18n="petition.view.select_inspector">Select Inspector (CI/SI)</span> <span class="required">*</span></label>
                                 <select name="inspector_id" required {% if not inspectors %}disabled aria-describedby="reenquiry-inspector-help"{% endif %}>
-                                    <option value="">-- Select Inspector --</option>
+                                    <option value="" data-i18n="petition.view.select_inspector_option">-- Select Inspector --</option>
                                     {% for insp in inspectors %}
                                     <option value="{{ insp.id }}" {% if petition.assigned_inspector_id == insp.id %}selected{% endif %}>{{ insp.full_name }}</option>
                                     {% endfor %}
@@ -705,10 +705,10 @@
                                 {% endif %}
                             </div>
                             <div class="form-group">
-                                <label>Reason for Re-enquiry <span class="required">*</span></label>
-                                <textarea name="comments" rows="3" required placeholder="Why this report is not satisfactory and what should be re-enquired"></textarea>
+                                <label><span data-i18n="petition.view.reason_reenquiry">Reason for Re-enquiry</span> <span class="required">*</span></label>
+                                <textarea name="comments" rows="3" required placeholder="Why this report is not satisfactory and what should be re-enquired" data-i18n-placeholder="petition.view.reenquiry_placeholder"></textarea>
                             </div>
-                            <button type="submit" class="btn btn-warning" {% if not inspectors %}disabled title="Map field inspectors to this officer in User Management first"{% endif %}>Send Back to Field Level</button>
+                            <button type="submit" class="btn btn-warning" {% if not inspectors %}disabled title="Map field inspectors to this officer in User Management first"{% endif %} data-i18n="petition.view.send_back_field">Send Back to Field Level</button>
                         </form>
                     </div>
 

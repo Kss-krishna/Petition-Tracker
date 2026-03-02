@@ -899,8 +899,12 @@ def get_petitions_for_user(user_id, user_role, cvo_office=None, status_filter=No
             params.append(user_id)
         elif user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
             cmd_office_map = {'cmd_apspdcl': 'apspdcl', 'cmd_apepdcl': 'apepdcl', 'cmd_apcpdcl': 'apcpdcl', 'cgm_hr_transco': 'headquarters'}
-            conditions.append("p.target_cvo = %s AND p.status IN ('action_instructed', 'action_taken')")
-            params.append(cmd_office_map[user_role])
+            # PO can assign action to any CMD/CGM user; always include explicitly assigned handler queue.
+            # Keep target_cvo office visibility as fallback for legacy rows where current handler might be missing.
+            conditions.append(
+                "p.status IN ('action_instructed', 'action_taken') AND (p.current_handler_id = %s OR p.target_cvo = %s)"
+            )
+            params.extend([user_id, cmd_office_map[user_role]])
         elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
             targets = _target_cvos_for_cvo_role(user_role)
             if not targets:
@@ -1664,9 +1668,10 @@ def po_send_to_cmd(petition_id, po_user_id, instructions=None, efile_no=None, cm
 
         cmd_role = None
         cmd_id = None
+        cmd_name = None
         if cmd_user_id:
             cur.execute("""
-                SELECT id, role
+                SELECT id, role, full_name
                 FROM users
                 WHERE id = %s
                   AND role IN ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco')
@@ -1678,6 +1683,7 @@ def po_send_to_cmd(petition_id, po_user_id, instructions=None, efile_no=None, cm
                 raise Exception("Selected CMD/CGM-HR assignee is invalid.")
             cmd_id = cmd_user['id']
             cmd_role = cmd_user['role']
+            cmd_name = (cmd_user.get('full_name') or '').strip() or None
         else:
             # Backward-compatible fallback for flows not yet passing an explicit assignee.
             cmd_role_map = {'apspdcl': 'cmd_apspdcl', 'apepdcl': 'cmd_apepdcl', 'apcpdcl': 'cmd_apcpdcl', 'headquarters': 'cgm_hr_transco'}
@@ -1685,9 +1691,10 @@ def po_send_to_cmd(petition_id, po_user_id, instructions=None, efile_no=None, cm
             if not cmd_role:
                 raise Exception("No CMD role configured for this jurisdiction.")
 
-            cur.execute("SELECT id FROM users WHERE role = %s AND is_active = TRUE LIMIT 1", (cmd_role,))
+            cur.execute("SELECT id, full_name FROM users WHERE role = %s AND is_active = TRUE LIMIT 1", (cmd_role,))
             cmd_user = cur.fetchone()
             cmd_id = cmd_user['id'] if cmd_user else None
+            cmd_name = (cmd_user.get('full_name') or '').strip() if cmd_user else None
             if not cmd_id:
                 raise Exception(f"No active user found for role {cmd_role}.")
 
@@ -1710,10 +1717,11 @@ def po_send_to_cmd(petition_id, po_user_id, instructions=None, efile_no=None, cm
             WHERE id = (SELECT id FROM enquiry_reports WHERE petition_id = %s ORDER BY submitted_at DESC LIMIT 1)
         """, (instructions, petition_id))
 
+        action_label = f"Forwarded to {(cmd_name or 'CMD/CGM-HR')} for Action"
         cur.execute("""
             INSERT INTO petition_tracking (petition_id, from_user_id, to_user_id, from_role, to_role, action, comments, status_before, status_after)
-            VALUES (%s, %s, %s, 'po', %s, 'Forwarded to CMD for Action', %s, %s, 'action_instructed')
-        """, (petition_id, po_user_id, cmd_id, cmd_role, instructions, status_before))
+            VALUES (%s, %s, %s, 'po', %s, %s, %s, %s, 'action_instructed')
+        """, (petition_id, po_user_id, cmd_id, cmd_role, action_label, instructions, status_before))
 
         conn.commit()
     except Exception as e:

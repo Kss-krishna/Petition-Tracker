@@ -40,8 +40,8 @@ def test_validate_pdf_upload_variants():
 def test_resolve_efile_logic():
     petition = {"efile_no": "EO-1"}
     efile, err = app_module.resolve_efile_no_for_action(petition, "EO-2")
-    assert efile is None
-    assert "already set" in err
+    assert efile == "EO-1"
+    assert err is None
 
     efile, err = app_module.resolve_efile_no_for_action(petition, "")
     assert efile == "EO-1"
