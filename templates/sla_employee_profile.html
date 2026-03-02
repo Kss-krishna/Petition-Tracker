@@ -385,6 +385,12 @@
 (() => {
     const payload = {{ sla_petitions_json|tojson }};
     const stateMap = { within: 'Within SLA', beyond: 'Beyond SLA', in_progress: 'In Progress' };
+    const tr = (value) => {
+        const text = String(value == null ? '' : value);
+        if (!text) return text;
+        if (!window.appI18n || typeof window.appI18n.autoTranslate !== 'function') return text;
+        return window.appI18n.autoTranslate(text);
+    };
     const escapeHtml = (val) => String(val || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -410,9 +416,9 @@
         const bodyEl = document.getElementById('slaEmpDrilldownBody');
         if (!modal || !titleEl || !bodyEl) return;
         const rows = byMetric(metric);
-        titleEl.textContent = title || 'SLA Drilldown';
+        titleEl.textContent = title || tr('SLA Drilldown');
         if (!rows.length) {
-            bodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">No petitions found.</td></tr>';
+            bodyEl.innerHTML = `<tr><td colspan="8" class="empty-state">${escapeHtml(tr('No petitions found.'))}</td></tr>`;
         } else {
             bodyEl.innerHTML = rows.map((p) => `
                 <tr>
@@ -422,8 +428,8 @@
                     <td>${escapeHtml(p.status || '-')}</td>
                     <td>${escapeHtml(p.sla_days || '-')}</td>
                     <td>${escapeHtml(p.elapsed_days || '-')}</td>
-                    <td><span class="status-badge" style="--status-color:${(p.sla_state === 'within') ? '#16a34a' : ((p.sla_state === 'beyond') ? '#dc2626' : '#f59e0b')};">${escapeHtml(stateMap[p.sla_state] || 'In Progress')}</span></td>
-                    <td><a href="${escapeHtml(p.view_url)}" class="btn btn-xs btn-outline">View</a></td>
+                    <td><span class="status-badge" style="--status-color:${(p.sla_state === 'within') ? '#16a34a' : ((p.sla_state === 'beyond') ? '#dc2626' : '#f59e0b')};">${escapeHtml(tr(stateMap[p.sla_state] || 'In Progress'))}</span></td>
+                    <td><a href="${escapeHtml(p.view_url)}" class="btn btn-xs btn-outline">${escapeHtml(tr('View'))}</a></td>
                 </tr>
             `).join('');
         }

@@ -1232,7 +1232,7 @@ body {
 }
 
 .petitions-page-card .data-table {
-    min-width: 1320px;
+    min-width: 1040px;
     border-collapse: separate;
     border-spacing: 0;
     background: #ffffff;
@@ -1249,12 +1249,18 @@ body {
     color: #5e749f;
     border-bottom-color: #d9e7ff;
     font-size: 0.74rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .petitions-page-card .data-table td {
     border-bottom-color: #edf3ff;
     color: #2b3d64;
     vertical-align: middle;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .petitions-page-card .data-table tbody tr:nth-child(even) {
@@ -7627,7 +7633,7 @@ canvas {
     }
 
     .data-table {
-        min-width: 760px !important;
+        min-width: 620px !important;
     }
 
     .data-table th,
@@ -7675,6 +7681,10 @@ canvas {
         padding: 0 4px 8px !important;
     }
 
+    .dashboard-compact-board .data-table {
+        min-width: 560px !important;
+    }
+
     .dashboard-compact-board .data-table th,
     .dashboard-compact-board .data-table td {
         padding: 7px 8px !important;
@@ -7696,7 +7706,7 @@ canvas {
     }
 
     .data-table {
-        min-width: 680px !important;
+        min-width: 540px !important;
     }
 
     .data-table th,

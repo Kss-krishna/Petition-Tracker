@@ -191,5 +191,9 @@
   "petitioner.profile.status_split": "Status Split",
   "petitioner.profile.chart.petitions": "Petitions",
   "petitioner.profile.load_error": "Unable to load petitioner profile.",
-  "petitioner.profile.load_profile_error": "Unable to load profile"
+  "petitioner.profile.load_profile_error": "Unable to load profile",
+  "__auto__": {
+    "phrases": {},
+    "words": {}
+  }
 }

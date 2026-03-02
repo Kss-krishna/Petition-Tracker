@@ -10,6 +10,10 @@ import csv
 import re
 import copy
 import random
+import json
+import base64
+import urllib.request
+import urllib.error
 from uuid import uuid4
 from werkzeug.utils import secure_filename
 try:
@@ -816,6 +820,146 @@ def get_form_field_config(form_key, field_key):
     return get_effective_form_field_configs().get(key, {'label': field_key, 'type': 'text', 'required': False, 'options': []})
 
 
+def _is_otp_login_enabled():
+    if app.config.get('TESTING'):
+        return False
+    return os.getenv('OTP_LOGIN_ENABLED', '1').strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _normalize_mobile_for_otp(phone):
+    digits = re.sub(r'\D+', '', phone or '')
+    if not digits:
+        return ''
+    if len(digits) > 10 and digits.endswith(digits[-10:]):
+        # Prefer 10-digit local mobile format for gateway payload.
+        return digits[-10:]
+    return digits
+
+
+def _mask_mobile(mobile):
+    m = (mobile or '').strip()
+    if len(m) < 4:
+        return '****'
+    return ('*' * max(0, len(m) - 4)) + m[-4:]
+
+
+def _otp_settings():
+    return {
+        'send_url': os.getenv('OTP_SEND_URL', 'http://10.96.76.164:5050/sendOTP').strip(),
+        'verify_url': os.getenv('OTP_VERIFY_URL', 'http://10.96.76.164:5050/verifyOTP').strip(),
+        'auth_user': os.getenv('OTP_AUTH_USERNAME', 'aptresr').strip(),
+        'auth_pass': os.getenv('OTP_AUTH_PASSWORD', 'Sr@09S$2252').strip(),
+        'otp_type': os.getenv('OTP_TYPE', 'otp').strip(),
+        'app_name': os.getenv('OTP_APP_NAME', 'ita').strip(),
+        'message': os.getenv('OTP_MESSAGE_TEXT', 'Nigaa Authorization OTP is : ').strip(),
+        'user_id': os.getenv('OTP_SERVICE_USER_ID', '1025872').strip(),
+        'timeout': int((os.getenv('OTP_HTTP_TIMEOUT_SEC') or '15').strip()),
+    }
+
+
+def _otp_post(url, payload, settings):
+    raw = json.dumps(payload).encode('utf-8')
+    auth_raw = f"{settings['auth_user']}:{settings['auth_pass']}".encode('utf-8')
+    auth_b64 = base64.b64encode(auth_raw).decode('utf-8')
+    req = urllib.request.Request(url, data=raw, method='POST')
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Authorization', f'Basic {auth_b64}')
+    try:
+        with urllib.request.urlopen(req, timeout=settings['timeout']) as resp:
+            body = resp.read().decode('utf-8', errors='ignore') or '{}'
+            try:
+                data = json.loads(body)
+            except Exception:
+                data = {'raw': body}
+            return True, data
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='ignore') if hasattr(e, 'read') else ''
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            data = {'raw': body}
+        data.setdefault('http_status', e.code)
+        return False, data
+    except Exception as e:
+        return False, {'error': str(e)}
+
+
+def _otp_success(data):
+    if not isinstance(data, dict):
+        return False
+    truthy = {'1', 'true', 'yes', 'ok', 'success', 'verified', 'valid'}
+    falsy = {'0', 'false', 'no', 'fail', 'failed', 'invalid', 'error'}
+    keys = ('success', 'status', 'isSuccess', 'verified', 'valid', 'result', 'code')
+    for key in keys:
+        if key not in data:
+            continue
+        val = data.get(key)
+        if isinstance(val, bool):
+            return val
+        sval = str(val).strip().lower()
+        if sval in truthy:
+            return True
+        if sval in falsy:
+            return False
+    msg = str(data.get('message') or data.get('msg') or '').strip().lower()
+    if any(x in msg for x in ('invalid', 'failed', 'error', 'expired')):
+        return False
+    if any(x in msg for x in ('success', 'sent', 'verified', 'valid')):
+        return True
+    http_status = str(data.get('http_status') or '').strip()
+    if http_status and http_status != '200':
+        return False
+    # Conservative fallback for gateways that only return 200 with opaque body.
+    return bool(data)
+
+
+def _send_login_otp(mobile):
+    settings = _otp_settings()
+    payload = {
+        'mobileno': mobile,
+        'otpType': settings['otp_type'],
+        'userId': settings['user_id'],
+        'appName': settings['app_name'],
+        'message': settings['message'],
+    }
+    ok, data = _otp_post(settings['send_url'], payload, settings)
+    if not ok or not _otp_success(data):
+        msg = data.get('message') or data.get('msg') or 'Unable to send OTP. Please try again.'
+        return False, str(msg)
+    return True, None
+
+
+def _verify_login_otp(mobile, otp_code):
+    settings = _otp_settings()
+    payload = {
+        'mobileno': mobile,
+        'otpcode': otp_code,
+        'userId': settings['user_id'],
+        'appName': settings['app_name'],
+    }
+    ok, data = _otp_post(settings['verify_url'], payload, settings)
+    if not ok or not _otp_success(data):
+        msg = data.get('message') or data.get('msg') or 'Invalid OTP. Please try again.'
+        return False, str(msg)
+    return True, None
+
+
+def _clear_pending_otp():
+    session.pop('otp_pending_user', None)
+    session.pop('otp_pending_mobile', None)
+
+
+def _activate_login_session(user):
+    session['user_id'] = user['id']
+    session['username'] = user['username']
+    session['full_name'] = user['full_name']
+    session['user_role'] = user['role']
+    session['cvo_office'] = user.get('cvo_office')
+    session['phone'] = user.get('phone')
+    session['email'] = user.get('email')
+    session['profile_photo'] = user.get('profile_photo')
+
+
 def resolve_efile_no_for_action(petition, incoming_efile_no, required_message=None):
     existing_efile = (petition.get('efile_no') or '').strip() if petition else ''
     incoming = (incoming_efile_no or '').strip()
@@ -1110,15 +1254,69 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    otp_required = bool(session.get('otp_pending_user') and session.get('otp_pending_mobile'))
+    otp_mobile_masked = _mask_mobile(session.get('otp_pending_mobile'))
+
     if request.method == 'GET' and request.args.get('refresh_captcha') == '1':
         reset_login_captcha()
+    if request.method == 'GET' and request.args.get('reset_otp') == '1':
+        _clear_pending_otp()
+        otp_required = False
+        otp_mobile_masked = ''
 
     if request.method == 'POST':
+        login_action = (request.form.get('login_action') or 'credentials').strip().lower()
+
+        if login_action == 'reset_otp':
+            _clear_pending_otp()
+            reset_login_captcha()
+            return redirect(url_for('login'))
+
+        if login_action == 'resend_otp':
+            pending_user = session.get('otp_pending_user')
+            pending_mobile = (session.get('otp_pending_mobile') or '').strip()
+            if not pending_user or not pending_mobile:
+                flash('OTP session expired. Please login again.', 'warning')
+                _clear_pending_otp()
+                reset_login_captcha()
+                return redirect(url_for('login'))
+            ok, msg = _send_login_otp(pending_mobile)
+            if ok:
+                flash(f'OTP sent to {otp_mobile_masked}.', 'success')
+            else:
+                flash(msg, 'danger')
+            return redirect(url_for('login'))
+
+        if login_action == 'verify_otp':
+            pending_user = session.get('otp_pending_user')
+            pending_mobile = (session.get('otp_pending_mobile') or '').strip()
+            otp_code = (request.form.get('otp_code') or '').strip()
+            if not pending_user or not pending_mobile:
+                flash('OTP session expired. Please login again.', 'warning')
+                _clear_pending_otp()
+                reset_login_captcha()
+                return redirect(url_for('login'))
+            if not otp_code:
+                flash('OTP is required.', 'warning')
+                return redirect(url_for('login'))
+            ok, msg = _verify_login_otp(pending_mobile, otp_code)
+            if not ok:
+                flash(msg, 'danger')
+                return redirect(url_for('login'))
+
+            session.pop('login_captcha_a', None)
+            session.pop('login_captcha_b', None)
+            session.pop('login_captcha_answer', None)
+            _activate_login_session(pending_user)
+            _clear_pending_otp()
+            flash(f'Welcome, {pending_user["full_name"]}!', 'success')
+            return redirect(url_for('dashboard'))
+
         if not validate_login_captcha(request.form.get('captcha_answer')):
             flash('Captcha answer is incorrect.', 'warning')
             reset_login_captcha()
             a, b = get_login_captcha()
-            return render_template('login.html', captcha_a=a, captcha_b=b)
+            return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=otp_required, otp_mobile_masked=otp_mobile_masked)
 
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
@@ -1128,17 +1326,38 @@ def login():
                 flash('JMD login is disabled. Please login using PO credentials.', 'warning')
                 reset_login_captcha()
                 return redirect(url_for('login'))
+
+            if _is_otp_login_enabled():
+                mobile = _normalize_mobile_for_otp(user.get('phone'))
+                if not mobile:
+                    flash('Contact admin to update phone number.', 'warning')
+                    reset_login_captcha()
+                    a, b = get_login_captcha()
+                    return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=False, otp_mobile_masked='')
+                ok, msg = _send_login_otp(mobile)
+                if not ok:
+                    flash(msg, 'danger')
+                    reset_login_captcha()
+                    a, b = get_login_captcha()
+                    return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=False, otp_mobile_masked='')
+                session['otp_pending_user'] = {
+                    'id': user['id'],
+                    'username': user['username'],
+                    'full_name': user['full_name'],
+                    'role': user['role'],
+                    'cvo_office': user.get('cvo_office'),
+                    'phone': user.get('phone'),
+                    'email': user.get('email'),
+                    'profile_photo': user.get('profile_photo'),
+                }
+                session['otp_pending_mobile'] = mobile
+                flash(f'OTP sent to {_mask_mobile(mobile)}.', 'success')
+                return redirect(url_for('login'))
+
             session.pop('login_captcha_a', None)
             session.pop('login_captcha_b', None)
             session.pop('login_captcha_answer', None)
-            session['user_id'] = user['id']
-            session['username'] = user['username']
-            session['full_name'] = user['full_name']
-            session['user_role'] = user['role']
-            session['cvo_office'] = user.get('cvo_office')
-            session['phone'] = user.get('phone')
-            session['email'] = user.get('email')
-            session['profile_photo'] = user.get('profile_photo')
+            _activate_login_session(user)
             flash(f'Welcome, {user["full_name"]}!', 'success')
             return redirect(url_for('dashboard'))
 
@@ -1146,7 +1365,9 @@ def login():
         reset_login_captcha()
 
     a, b = get_login_captcha()
-    return render_template('login.html', captcha_a=a, captcha_b=b)
+    otp_required = bool(session.get('otp_pending_user') and session.get('otp_pending_mobile'))
+    otp_mobile_masked = _mask_mobile(session.get('otp_pending_mobile'))
+    return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=otp_required, otp_mobile_masked=otp_mobile_masked)
 
 
 @app.route('/auth/request-signup', methods=['POST'])
@@ -2271,8 +2492,8 @@ def petition_action(petition_id):
             if petition.get('source_of_petition') != 'media':
                 flash('Direct lodge at CVO is allowed only for Electronic and Print Media source petitions.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
-            if petition.get('status') not in ('forwarded_to_cvo', 'permission_approved'):
-                flash('Direct lodge at CVO is allowed only when petition is pending at CVO stage.', 'warning')
+            if petition.get('status') != 'enquiry_report_submitted':
+                flash('Direct lodge at CVO is allowed only after enquiry report is submitted by field officer.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             lodge_remarks = (request.form.get('lodge_remarks') or '').strip()
             if not lodge_remarks:

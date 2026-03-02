@@ -509,6 +509,12 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
 (() => {
     const drillRows = {{ sla_drilldown_rows|tojson }};
     const stateMap = { within: 'Within SLA', beyond: 'Beyond SLA', in_progress: 'In Progress' };
+    const tr = (value) => {
+        const text = String(value == null ? '' : value);
+        if (!text) return text;
+        if (!window.appI18n || typeof window.appI18n.autoTranslate !== 'function') return text;
+        return window.appI18n.autoTranslate(text);
+    };
     const escapeHtml = (val) => String(val || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -538,9 +544,9 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
         const bodyEl = document.getElementById('slaDrilldownBody');
         if (!modal || !titleEl || !bodyEl) return;
         const rows = filterByMetric(metric);
-        titleEl.textContent = title || 'SLA Drilldown';
+        titleEl.textContent = title || tr('SLA Drilldown');
         if (!rows.length) {
-            bodyEl.innerHTML = '<tr><td colspan="8" class="empty-state">No petitions found.</td></tr>';
+            bodyEl.innerHTML = `<tr><td colspan="8" class="empty-state">${escapeHtml(tr('No petitions found.'))}</td></tr>`;
         } else {
             bodyEl.innerHTML = rows.map(r => `
                 <tr>
@@ -550,8 +556,8 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
                     <td>${escapeHtml(r.status)}</td>
                     <td>${escapeHtml(r.sla_days)}</td>
                     <td>${escapeHtml(r.elapsed_days)}</td>
-                    <td><span class="status-badge" style="--status-color:${r.sla_state === 'within' ? '#16a34a' : (r.sla_state === 'beyond' ? '#dc2626' : '#f59e0b')};">${escapeHtml(stateMap[r.sla_state] || 'In Progress')}</span></td>
-                    <td><a href="${escapeHtml(r.view_url)}" class="btn btn-xs btn-outline">View</a></td>
+                    <td><span class="status-badge" style="--status-color:${r.sla_state === 'within' ? '#16a34a' : (r.sla_state === 'beyond' ? '#dc2626' : '#f59e0b')};">${escapeHtml(tr(stateMap[r.sla_state] || 'In Progress'))}</span></td>
+                    <td><a href="${escapeHtml(r.view_url)}" class="btn btn-xs btn-outline">${escapeHtml(tr('View'))}</a></td>
                 </tr>
             `).join('');
         }
@@ -593,9 +599,9 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
         if (el) el.textContent = String(val);
     };
     setText('slaTodayAssigned', todayAssigned.length);
-    setText('slaTodayOpen', `Open: ${todayOpen.length}`);
+    setText('slaTodayOpen', `${tr('Open')}: ${todayOpen.length}`);
     setText('slaMonthAssigned', monthAssigned.length);
-    setText('slaMonthViolation', `Beyond SLA: ${monthViolations.length}`);
+    setText('slaMonthViolation', `${tr('Beyond SLA')}: ${monthViolations.length}`);
 
     if (!window.Chart) return;
     const payload = {{ sla_employee_chart|tojson }};
@@ -622,9 +628,9 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
         data: {
             labels,
             datasets: [
-                { label: 'Within SLA', data: within, backgroundColor: '#22c55e' },
-                { label: 'Beyond SLA', data: beyond, backgroundColor: '#ef4444' },
-                { label: 'In Progress', data: inProgress, backgroundColor: '#f59e0b' },
+                { label: tr('Within SLA'), data: within, backgroundColor: '#22c55e' },
+                { label: tr('Beyond SLA'), data: beyond, backgroundColor: '#ef4444' },
+                { label: tr('In Progress'), data: inProgress, backgroundColor: '#f59e0b' },
             ]
         },
         options: {
@@ -646,7 +652,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
         new Chart(donutCanvas, {
             type: 'doughnut',
             data: {
-                labels: ['Within SLA', 'Beyond SLA', 'In Progress'],
+                labels: [tr('Within SLA'), tr('Beyond SLA'), tr('In Progress')],
                 datasets: [{
                     data: [
                         within.reduce((a, b) => a + (b || 0), 0),
@@ -677,7 +683,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
             data: {
                 labels: rankLabels,
                 datasets: [{
-                    label: 'Beyond SLA',
+                    label: tr('Beyond SLA'),
                     data: rankBeyond,
                     backgroundColor: '#f97316',
                     borderRadius: 6,
@@ -705,7 +711,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
             data: {
                 labels,
                 datasets: [{
-                    label: 'Compliance %',
+                    label: tr('Compliance %'),
                     data: compliance,
                     borderColor: '#38bdf8',
                     backgroundColor: 'rgba(56, 189, 248, 0.2)',
@@ -759,7 +765,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
             data: {
                 labels: dayLabels,
                 datasets: [{
-                    label: 'Violations',
+                    label: tr('Violations'),
                     data: violationSeries,
                     backgroundColor: '#22d3ee',
                     borderRadius: 4,
@@ -782,7 +788,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
             data: {
                 labels: dayLabels,
                 datasets: [{
-                    label: 'Closed',
+                    label: tr('Closed'),
                     data: closureSeries,
                     borderColor: '#38bdf8',
                     backgroundColor: 'rgba(56,189,248,.18)',
@@ -807,7 +813,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
         new Chart(openClosedCanvas, {
             type: 'doughnut',
             data: {
-                labels: ['Open', 'Closed'],
+                labels: [tr('Open'), tr('Closed')],
                 datasets: [{
                     data: [openCount, closedCount],
                     backgroundColor: ['#f59e0b', '#22c55e'],

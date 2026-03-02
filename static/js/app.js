@@ -81,13 +81,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 node = walker.nextNode();
             }
 
-            const attrTargets = document.querySelectorAll('[placeholder], [title], [aria-label], input[type=\"submit\"], input[type=\"button\"], input[type=\"reset\"], button');
+            const attrTargets = document.querySelectorAll('[placeholder], [title], [aria-label], [data-title], [data-label], input[type=\"submit\"], input[type=\"button\"], input[type=\"reset\"], button');
             attrTargets.forEach((el) => {
                 if (hasManualI18n(el)) return;
                 const attrs = [];
                 if (el.hasAttribute('placeholder')) attrs.push('placeholder');
                 if (el.hasAttribute('title')) attrs.push('title');
                 if (el.hasAttribute('aria-label')) attrs.push('aria-label');
+                if (el.hasAttribute('data-title')) attrs.push('data-title');
+                if (el.hasAttribute('data-label')) attrs.push('data-label');
                 if (el.tagName === 'INPUT' && ['submit', 'button', 'reset'].includes((el.getAttribute('type') || '').toLowerCase()) && el.hasAttribute('value')) {
                     attrs.push('value');
                 }
@@ -207,7 +209,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return fallback || key;
         },
-        lang: () => activeLanguage || 'en'
+        lang: () => activeLanguage || 'en',
+        autoTranslate: (text) => {
+            const value = String(text == null ? '' : text);
+            if (!value) return value;
+            if ((activeLanguage || 'en') !== 'te') return value;
+            return translateWithAutoMap(value, activeDictionary || {});
+        }
     };
 
     const loadLanguage = async (lang) => {

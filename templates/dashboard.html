@@ -468,8 +468,8 @@ async function openDashboardDrilldown(metric, title, sourceEl) {
     const body = document.getElementById('dashModalBody');
     const heading = document.getElementById('dashModalTitle');
     hideDashboardRowDetail();
-    heading.textContent = title;
-    body.innerHTML = '<tr><td colspan="7" class="empty-state">Loading...</td></tr>';
+    heading.textContent = title || tr('Drilldown');
+    body.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(tr('Loading...'))}</td></tr>`;
     modal.style.display = 'block';
     modal.classList.add('open');
     animateCardToModal(sourceEl, panel);
@@ -480,7 +480,7 @@ async function openDashboardDrilldown(metric, title, sourceEl) {
         const items = data.items || [];
         dashCurrentRows = items;
         if (!items.length) {
-            body.innerHTML = '<tr><td colspan="7" class="empty-state">No data found</td></tr>';
+            body.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(tr('No data found'))}</td></tr>`;
             return;
         }
         body.innerHTML = items.map((i, idx) => `
@@ -491,13 +491,20 @@ async function openDashboardDrilldown(metric, title, sourceEl) {
                 <td>${escapeHtml(i.status || '-')}</td>
                 <td>${escapeHtml(i.accident_summary || '-')}</td>
                 <td>${escapeHtml(i.received_date || '-')}</td>
-                <td><a href="/petitions/${i.id}" class="btn btn-xs btn-outline">View</a></td>
+                <td><a href="/petitions/${i.id}" class="btn btn-xs btn-outline">${escapeHtml(tr('View'))}</a></td>
             </tr>
         `).join('');
         bindDashboardRowTransitions();
     } catch (e) {
-        body.innerHTML = '<tr><td colspan="7" class="empty-state">Failed to load data</td></tr>';
+        body.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(tr('Failed to load data'))}</td></tr>`;
     }
+}
+
+function tr(value) {
+    const text = String(value == null ? '' : value);
+    if (!text) return text;
+    if (!window.appI18n || typeof window.appI18n.autoTranslate !== 'function') return text;
+    return window.appI18n.autoTranslate(text);
 }
 
 function bindDashboardRowTransitions() {
@@ -519,12 +526,12 @@ function openDashboardRowDetail(item, rowEl) {
     const wrapRect = detailWrap.getBoundingClientRect();
     detailBody.innerHTML = `
         <div class="dash-row-detail-grid">
-            <div><span>S.No</span><strong>${escapeHtml(item.sno || '-')}</strong></div>
-            <div><span>Petitioner</span><strong>${(item.petitioner_name && String(item.petitioner_name).toLowerCase() !== 'anonymous' && item.petitioner_name !== '-') ? `<a href="#" class="petitioner-profile-link" data-petitioner-name="${escapeHtml(item.petitioner_name)}">${escapeHtml(item.petitioner_name)}</a>` : escapeHtml(item.petitioner_name || '-')}</strong></div>
-            <div><span>Status</span><strong>${escapeHtml(item.status || '-')}</strong></div>
-            <div><span>Accident Details</span><strong>${escapeHtml(item.accident_summary || '-')}</strong></div>
-            <div><span>Received Date</span><strong>${escapeHtml(item.received_date || '-')}</strong></div>
-            <div class="full"><span>Subject</span><strong>${escapeHtml(item.subject || '-')}</strong></div>
+            <div><span>${escapeHtml(tr('S.No'))}</span><strong>${escapeHtml(item.sno || '-')}</strong></div>
+            <div><span>${escapeHtml(tr('Petitioner'))}</span><strong>${(item.petitioner_name && String(item.petitioner_name).toLowerCase() !== 'anonymous' && item.petitioner_name !== '-') ? `<a href="#" class="petitioner-profile-link" data-petitioner-name="${escapeHtml(item.petitioner_name)}">${escapeHtml(item.petitioner_name)}</a>` : escapeHtml(item.petitioner_name || '-')}</strong></div>
+            <div><span>${escapeHtml(tr('Status'))}</span><strong>${escapeHtml(item.status || '-')}</strong></div>
+            <div><span>${escapeHtml(tr('Accident Details'))}</span><strong>${escapeHtml(item.accident_summary || '-')}</strong></div>
+            <div><span>${escapeHtml(tr('Received Date'))}</span><strong>${escapeHtml(item.received_date || '-')}</strong></div>
+            <div class="full"><span>${escapeHtml(tr('Subject'))}</span><strong>${escapeHtml(item.subject || '-')}</strong></div>
         </div>
     `;
     detailWrap.style.display = 'block';
@@ -641,7 +648,7 @@ function initAnalyticsDashboard() {
         const idx = elements[0].index;
         const metric = metricByIndex(idx, chart);
         if (!metric) return;
-        const label = (chart.data.labels && chart.data.labels[idx]) ? String(chart.data.labels[idx]) : 'Selection';
+        const label = (chart.data.labels && chart.data.labels[idx]) ? String(chart.data.labels[idx]) : tr('Selection');
         const title = `${titlePrefix}: ${label}`;
         openDashboardDrilldown(metric, title, chart.canvas);
     };
@@ -658,7 +665,7 @@ function initAnalyticsDashboard() {
                 datasets: [
                     {
                         type: 'bar',
-                        label: 'Volume',
+                        label: tr('Volume'),
                         data: analyticsData.monthly_trend.values,
                         backgroundColor: 'rgba(6, 182, 212, 0.55)',
                         borderColor: '#06b6d4',
@@ -668,7 +675,7 @@ function initAnalyticsDashboard() {
                     },
                     {
                         type: 'line',
-                        label: 'Trend',
+                        label: tr('Trend'),
                         data: analyticsData.monthly_trend.values,
                         borderColor: '#4f46e5',
                         backgroundColor: g,
@@ -705,7 +712,7 @@ function initAnalyticsDashboard() {
                     chartClickToDrilldown(event, elements, chart, (idx) => {
                         const key = analyticsData.monthly_trend.keys ? analyticsData.monthly_trend.keys[idx] : null;
                         return key ? `month:${key}` : null;
-                    }, 'Month')
+                    }, tr('Month'))
             }
         });
         dashboardCharts.push(pulseChart);
@@ -713,10 +720,12 @@ function initAnalyticsDashboard() {
 
     const statusCtx = document.getElementById('chartStatusRing');
     if (statusCtx) {
+        const statusRawLabels = analyticsData.status_split.labels || [];
+        const statusDisplayLabels = statusRawLabels.map((label) => tr(label));
         const statusChart = new Chart(statusCtx, {
             type: 'doughnut',
             data: {
-                labels: analyticsData.status_split.labels,
+                labels: statusDisplayLabels,
                 datasets: [{
                     data: analyticsData.status_split.values,
                     backgroundColor: palette,
@@ -731,9 +740,9 @@ function initAnalyticsDashboard() {
                 plugins: { legend: commonLegend },
                 onClick: (event, elements, chart) =>
                     chartClickToDrilldown(event, elements, chart, (idx) => {
-                        const label = String(chart.data.labels[idx] || '');
+                        const label = String(statusRawLabels[idx] || '');
                         return statusMetricMap[label] || null;
-                    }, 'Status')
+                    }, tr('Status'))
             }
         });
         dashboardCharts.push(statusChart);
@@ -741,12 +750,14 @@ function initAnalyticsDashboard() {
 
     const typeCtx = document.getElementById('chartTypeBloom');
     if (typeCtx) {
+        const typeRawLabels = analyticsData.type_split.labels || [];
+        const typeDisplayLabels = typeRawLabels.map((label) => tr(label));
         const typeChart = new Chart(typeCtx, {
             type: 'radar',
             data: {
-                labels: analyticsData.type_split.labels,
+                labels: typeDisplayLabels,
                 datasets: [{
-                    label: 'Type Mix',
+                    label: tr('Type Mix'),
                     data: analyticsData.type_split.values,
                     backgroundColor: 'rgba(236, 72, 153, 0.22)',
                     borderColor: '#ec4899',
@@ -768,9 +779,9 @@ function initAnalyticsDashboard() {
                 },
                 onClick: (event, elements, chart) =>
                     chartClickToDrilldown(event, elements, chart, (idx) => {
-                        const label = String(chart.data.labels[idx] || '');
+                        const label = String(typeRawLabels[idx] || '');
                         return typeMetricMap[label] || null;
-                    }, 'Petition Type')
+                    }, tr('Petition Type'))
             }
         });
         dashboardCharts.push(typeChart);
@@ -778,10 +789,12 @@ function initAnalyticsDashboard() {
 
     const sourceCtx = document.getElementById('chartSourceBurst');
     if (sourceCtx) {
+        const sourceRawLabels = analyticsData.source_split.labels || [];
+        const sourceDisplayLabels = sourceRawLabels.map((label) => tr(label));
         const sourceChart = new Chart(sourceCtx, {
             type: 'polarArea',
             data: {
-                labels: analyticsData.source_split.labels,
+                labels: sourceDisplayLabels,
                 datasets: [{
                     data: analyticsData.source_split.values,
                     backgroundColor: ['rgba(79,70,229,0.68)', 'rgba(34,197,94,0.62)', 'rgba(245,158,11,0.66)', 'rgba(236,72,153,0.62)', 'rgba(6,182,212,0.66)'],
@@ -795,9 +808,9 @@ function initAnalyticsDashboard() {
                 scales: { r: { ticks: { color: axisColor, font: { size: axisFontSize } }, grid: { color: gridColor } } },
                 onClick: (event, elements, chart) =>
                     chartClickToDrilldown(event, elements, chart, (idx) => {
-                        const label = String(chart.data.labels[idx] || '');
+                        const label = String(sourceRawLabels[idx] || '');
                         return sourceMetricMap[label] || null;
-                    }, 'Source')
+                    }, tr('Source'))
             }
         });
         dashboardCharts.push(sourceChart);
@@ -805,10 +818,12 @@ function initAnalyticsDashboard() {
 
     const modeCtx = document.getElementById('chartModeArc');
     if (modeCtx) {
+        const modeRawLabels = analyticsData.enquiry_mode_split.labels || [];
+        const modeDisplayLabels = modeRawLabels.map((label) => tr(label));
         const modeChart = new Chart(modeCtx, {
             type: 'doughnut',
             data: {
-                labels: analyticsData.enquiry_mode_split.labels,
+                labels: modeDisplayLabels,
                 datasets: [{
                     data: analyticsData.enquiry_mode_split.values,
                     backgroundColor: ['#22c55e', '#4f46e5'],
@@ -825,9 +840,9 @@ function initAnalyticsDashboard() {
                 plugins: { legend: commonLegend },
                 onClick: (event, elements, chart) =>
                     chartClickToDrilldown(event, elements, chart, (idx) => {
-                        const label = String(chart.data.labels[idx] || '');
+                        const label = String(modeRawLabels[idx] || '');
                         return modeMetricMap[label] || null;
-                    }, 'Enquiry Mode')
+                    }, tr('Enquiry Mode'))
             }
         });
         dashboardCharts.push(modeChart);
@@ -844,7 +859,7 @@ function initAnalyticsDashboard() {
             data: {
                 labels: analyticsData.officer_split.labels,
                 datasets: [{
-                    label: 'Petitions',
+                    label: tr('Petitions'),
                     data: analyticsData.officer_split.values,
                     backgroundColor: ['rgba(59,130,246,0.72)', 'rgba(16,185,129,0.68)', 'rgba(139,92,246,0.68)', 'rgba(245,158,11,0.68)', 'rgba(236,72,153,0.68)', 'rgba(14,165,233,0.68)', 'rgba(99,102,241,0.68)', 'rgba(239,68,68,0.68)'],
                     borderColor: ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#6366f1', '#ef4444'],
@@ -897,7 +912,7 @@ function initAnalyticsDashboard() {
                     chartClickToDrilldown(event, elements, chart, (idx) => {
                         const key = analyticsData.officer_split.keys ? analyticsData.officer_split.keys[idx] : null;
                         return key ? `officer:${key}` : null;
-                    }, 'Officer')
+                    }, tr('Officer'))
             }
         });
         dashboardCharts.push(officerChart);
@@ -907,7 +922,7 @@ function initAnalyticsDashboard() {
 document.querySelectorAll('.is-drilldown').forEach(card => {
     card.addEventListener('click', () => {
         const translatedTitle = (card.querySelector('.stat-label, .analytics-summary-label')?.textContent || '').trim();
-        openDashboardDrilldown(card.dataset.metric, translatedTitle || card.dataset.title || 'Drilldown', card);
+        openDashboardDrilldown(card.dataset.metric, translatedTitle || tr(card.dataset.title || 'Drilldown'), card);
     });
 });
 

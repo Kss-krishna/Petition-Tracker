@@ -341,7 +341,27 @@
             {% endif %}
             {% endwith %}
 
+            {% if otp_required %}
             <form method="POST" action="{{ url_for('login') }}" class="login-form" data-login-panel="secure">
+                <input type="hidden" name="login_action" value="verify_otp">
+                <div class="form-group">
+                    <label>Mobile Verification</label>
+                    <input type="text" value="{{ otp_mobile_masked }}" readonly>
+                    <small class="form-help">Enter OTP sent to your registered mobile number.</small>
+                </div>
+                <div class="form-group">
+                    <label for="otp_code">OTP</label>
+                    <input type="text" id="otp_code" name="otp_code" required inputmode="numeric" pattern="[0-9]+" maxlength="10" placeholder="Enter OTP">
+                </div>
+                <button type="submit" class="btn btn-primary btn-full login-captcha-verify">Verify OTP</button>
+                <div class="form-actions" style="margin-top:8px; display:flex; gap:8px;">
+                    <button type="submit" name="login_action" value="resend_otp" class="btn btn-outline btn-full">Resend OTP</button>
+                    <a href="{{ url_for('login', reset_otp='1') }}" class="btn btn-outline btn-full">Change Login</a>
+                </div>
+            </form>
+            {% else %}
+            <form method="POST" action="{{ url_for('login') }}" class="login-form" data-login-panel="secure">
+                <input type="hidden" name="login_action" value="credentials">
                 <div class="form-group">
                     <label for="username" data-i18n="login.username">Username</label>
                     <input type="text" id="username" name="username" required autofocus
@@ -366,6 +386,7 @@
                     <span data-i18n="login.verify_signin">Verify & Sign In</span>
                 </button>
             </form>
+            {% endif %}
 
             <form method="POST" action="{{ url_for('request_recovery') }}" class="login-form" data-login-panel="recovery" style="display:none;">
                 <div class="form-group">

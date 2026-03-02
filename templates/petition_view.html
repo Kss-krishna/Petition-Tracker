@@ -520,34 +520,7 @@
             {% endif %}
 
             {% if current_user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp', 'super_admin') %}
-                {% set is_media_cvo_stage = petition.source_of_petition == 'media' and petition.status in ('forwarded_to_cvo', 'permission_approved') %}
-                {% if is_media_cvo_stage %}
-                <div class="action-panel">
-                    <h4>CVO Decision (Electronic and Print Media)</h4>
-                    <div class="form-group">
-                        <label>Choose Path</label>
-                        <select id="cvo_media_decision_selector" onchange="toggleCvoMediaDecisionPanels()">
-                            <option value="direct_lodge" selected>Direct Lodge</option>
-                            <option value="proceed_enquiry">Proceed with Enquiry</option>
-                        </select>
-                    </div>
-                    <small class="form-help">Choose direct lodge when no field enquiry is required; otherwise proceed with enquiry workflow.</small>
-                </div>
-                <div class="action-divider">OR</div>
-                <div class="action-panel" id="cvo_media_direct_lodge_panel">
-                    <h4>Direct Lodge at CVO (Electronic and Print Media)</h4>
-                    <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}">
-                        <input type="hidden" name="action" value="cvo_direct_lodge">
-                        <div class="form-group">
-                            <label>Remarks <span class="required">*</span></label>
-                            <textarea name="lodge_remarks" rows="3" required placeholder="Reason for direct lodge at CVO"></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-success">Direct Lodge Petition</button>
-                    </form>
-                </div>
-                {% endif %}
-
-                <div id="cvo_media_enquiry_panel" {% if is_media_cvo_stage %}style="display:none;"{% endif %}>
+                <div id="cvo_media_enquiry_panel">
                 {% if petition.status == 'forwarded_to_cvo' and petition.requires_permission %}
                 <div class="action-panel">
                     <h4>Select Enquiry Permission</h4>
@@ -654,20 +627,6 @@
                 </div>
                 {% endif %}
                 </div>
-                {% if is_media_cvo_stage %}
-                <script>
-                function toggleCvoMediaDecisionPanels() {
-                    const selector = document.getElementById('cvo_media_decision_selector');
-                    const directPanel = document.getElementById('cvo_media_direct_lodge_panel');
-                    const enquiryPanel = document.getElementById('cvo_media_enquiry_panel');
-                    if (!selector || !directPanel || !enquiryPanel) return;
-                    const isDirect = selector.value === 'direct_lodge';
-                    directPanel.style.display = isDirect ? '' : 'none';
-                    enquiryPanel.style.display = isDirect ? 'none' : '';
-                }
-                toggleCvoMediaDecisionPanels();
-                </script>
-                {% endif %}
 
                 {% if petition.status == 'enquiry_report_submitted' %}
                 <div class="action-panel">
@@ -677,6 +636,9 @@
                         <select id="cvo_next_step_selector" onchange="toggleCvoNextStepFields()">
                             <option value="forward" data-i18n="petition.view.forward_to_po">Forward to PO</option>
                             <option value="reenquiry" data-i18n="petition.view.send_back_reenquiry">Send Back for Re-enquiry</option>
+                            {% if petition.source_of_petition == 'media' %}
+                            <option value="direct_lodge">Direct Lodge</option>
+                            {% endif %}
                         </select>
                     </div>
 
@@ -711,16 +673,32 @@
                             <button type="submit" class="btn btn-warning" {% if not inspectors %}disabled title="Map field inspectors to this officer in User Management first"{% endif %} data-i18n="petition.view.send_back_field">Send Back to Field Level</button>
                         </form>
                     </div>
+                    {% if petition.source_of_petition == 'media' %}
+                    <div id="cvo_direct_lodge_wrap" style="display:none;">
+                        <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}">
+                            <input type="hidden" name="action" value="cvo_direct_lodge">
+                            <div class="form-group">
+                                <label>Remarks <span class="required">*</span></label>
+                                <textarea name="lodge_remarks" rows="3" required placeholder="Reason for direct lodge at CVO"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-success">Direct Lodge Petition</button>
+                        </form>
+                    </div>
+                    {% endif %}
 
                     <script>
                     function toggleCvoNextStepFields() {
                         const selector = document.getElementById('cvo_next_step_selector');
                         const forwardWrap = document.getElementById('cvo_forward_wrap');
                         const reenquiryWrap = document.getElementById('cvo_reenquiry_wrap');
+                        const directLodgeWrap = document.getElementById('cvo_direct_lodge_wrap');
                         if (!selector || !forwardWrap || !reenquiryWrap) return;
-                        const isForward = selector.value === 'forward';
-                        forwardWrap.style.display = isForward ? '' : 'none';
-                        reenquiryWrap.style.display = isForward ? 'none' : '';
+                        const selected = selector.value;
+                        forwardWrap.style.display = selected === 'forward' ? '' : 'none';
+                        reenquiryWrap.style.display = selected === 'reenquiry' ? '' : 'none';
+                        if (directLodgeWrap) {
+                            directLodgeWrap.style.display = selected === 'direct_lodge' ? '' : 'none';
+                        }
                     }
                     toggleCvoNextStepFields();
                     </script>
