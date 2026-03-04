@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>{% block title %}Petition Tracker{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/nigaa-logo.svg') }}">
     <link rel="alternate icon" href="{{ url_for('static', filename='img/nigaa-logo.svg') }}">
@@ -254,6 +255,43 @@
     {% endif %}
     
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        (function () {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            var token = meta ? meta.getAttribute('content') : '';
+            if (!token) return;
+
+            function ensureFormToken(form) {
+                if (!form || form.dataset.csrfReady === '1') return;
+                var input = form.querySelector('input[name="_csrf_token"]');
+                if (!input) {
+                    input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = '_csrf_token';
+                    form.appendChild(input);
+                }
+                input.value = token;
+                form.dataset.csrfReady = '1';
+            }
+
+            document.querySelectorAll('form').forEach(ensureFormToken);
+            document.addEventListener('submit', function (evt) {
+                ensureFormToken(evt.target);
+            }, true);
+
+            var nativeFetch = window.fetch;
+            if (typeof nativeFetch === 'function') {
+                window.fetch = function (input, init) {
+                    init = init || {};
+                    init.headers = new Headers(init.headers || {});
+                    if (!init.headers.has('X-CSRF-Token')) {
+                        init.headers.set('X-CSRF-Token', token);
+                    }
+                    return nativeFetch(input, init);
+                };
+            }
+        })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

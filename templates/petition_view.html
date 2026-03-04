@@ -6,6 +6,8 @@
 {% set f_inspector_report_text = get_field_cfg('inspector_report', 'report_text') %}
 {% set f_inspector_recommendation = get_field_cfg('inspector_report', 'recommendation') %}
 {% set f_inspector_report_file = get_field_cfg('inspector_report', 'report_file') %}
+{% set f_inspector_request_detailed = get_field_cfg('inspector_report', 'request_detailed_permission') %}
+{% set f_inspector_detailed_reason = get_field_cfg('inspector_report', 'detailed_request_reason') %}
 {% set f_cvo_comments = get_field_cfg('cvo_review', 'cvo_comments') %}
 {% set f_cvo_consolidated_file = get_field_cfg('cvo_review', 'consolidated_report_file') %}
 {% set f_cmd_action_taken = get_field_cfg('cmd_action', 'action_taken') %}
@@ -19,6 +21,11 @@
 {% set f_po_direct_lodge_efile = get_field_cfg('po_decision', 'po_direct_lodge_efile_no') %}
 {% set f_po_direct_lodge_remarks = get_field_cfg('po_decision', 'po_direct_lodge_remarks') %}
 {% set f_po_close_comments = get_field_cfg('po_decision', 'close_comments') %}
+{% set enquiry_type_norm = (petition.enquiry_type or 'detailed')|trim|lower %}
+{% set enquiry_type_display = (enquiry_type_norm|title) %}
+{% if petition.status in ('sent_for_permission', 'forwarded_to_cvo') and enquiry_type_norm == 'detailed' and (petition.permission_status or 'pending') == 'pending' %}
+{% set enquiry_type_display = 'Not Decided' %}
+{% endif %}
 <div class="petition-detail">
     <div class="card petition-header-card">
         <div class="petition-title-row">
@@ -128,14 +135,14 @@
                 {% endif %}
                 <div class="info-item">
                     <span class="info-label">Enquiry Type</span>
-                    <span class="info-value">{{ (petition.enquiry_type or 'detailed')|title }}</span>
+                    <span class="info-value">{{ enquiry_type_display }}</span>
                 </div>
                 <div class="info-item">
                     <span class="info-label">SLA Target</span>
                     <span class="info-value">
                         {% if petition.source_of_petition == 'media' %}
                             45 days
-                        {% elif petition.enquiry_type == 'preliminary' %}
+                        {% elif enquiry_type_norm == 'preliminary' %}
                             15 days
                         {% else %}
                             60 days
@@ -389,10 +396,13 @@
                         <div class="form-group" id="po_perm_enquiry_group">
                             <label>Enquiry Type Decision <span class="required">*</span></label>
                             <select id="po_perm_enquiry_input" name="enquiry_type_decision">
-                                <option value="">-- Select Enquiry Type --</option>
-                                <option value="detailed" {% if petition.enquiry_type == 'detailed' %}selected{% endif %}>Detailed</option>
-                                <option value="preliminary" {% if petition.enquiry_type == 'preliminary' %}selected{% endif %}>Preliminary</option>
+                                <option value="" {% if not conversion_permission_stage %}selected{% endif %}>-- Select Enquiry Type --</option>
+                                <option value="detailed" {% if conversion_permission_stage %}selected{% endif %}>Detailed</option>
+                                <option value="preliminary" {% if conversion_permission_stage %}disabled{% endif %}>Preliminary</option>
                             </select>
+                            {% if conversion_permission_stage %}
+                            <small class="form-help">Conversion workflow in progress: only Detailed is allowed.</small>
+                            {% endif %}
                         </div>
 
                         <div class="form-group" id="po_perm_comments_group">
@@ -448,6 +458,9 @@
                             if (orgInput) orgInput.required = true;
                             targetInput.required = true;
                             enquiryInput.required = true;
+                            if ({{ 'true' if conversion_permission_stage else 'false' }}) {
+                                enquiryInput.value = 'detailed';
+                            }
                             commentsInput.required = false;
                             lodgeRemarksInput.required = false;
                             efileInput.required = efileInput.dataset.approveRequired === '1';
@@ -638,8 +651,9 @@
                         <div class="form-group" id="cvo_mode_direct_{{ petition.id }}">
                             <label>Enquiry Type (Direct)</label>
                             <select id="cvo_direct_enquiry_type_{{ petition.id }}" name="enquiry_type_decision">
-                                <option value="detailed" {% if petition.enquiry_type == 'detailed' %}selected{% endif %}>Detailed</option>
-                                <option value="preliminary" {% if petition.enquiry_type == 'preliminary' %}selected{% endif %}>Preliminary</option>
+                                <option value="" selected>-- Select Enquiry Type --</option>
+                                <option value="detailed">Detailed</option>
+                                <option value="preliminary">Preliminary</option>
                             </select>
                         </div>
                         <div class="form-group" id="cvo_mode_direct_inspector_{{ petition.id }}">
@@ -699,23 +713,31 @@
                         <input type="hidden" name="action" value="assign_inspector">
                         <div class="form-group">
                             <label>Select Inspector (CI/SI)</label>
+                            {% if conversion_reassignment_locked %}
+                            <input type="hidden" name="inspector_id" value="{{ petition.assigned_inspector_id }}">
+                            <select required disabled>
+                                <option value="{{ petition.assigned_inspector_id }}" selected>{{ petition.inspector_name or ('Inspector #' ~ petition.assigned_inspector_id) }}</option>
+                            </select>
+                            <small class="form-help">Preliminary-to-detailed conversion approved: previously assigned inspector is locked.</small>
+                            {% else %}
                             <select name="inspector_id" required {% if not inspectors %}disabled aria-describedby="inspector-map-help"{% endif %}>
                                 <option value="">-- Select Inspector --</option>
                                 {% for insp in inspectors %}
-                                <option value="{{ insp.id }}">{{ insp.full_name }}</option>
+                                <option value="{{ insp.id }}" {% if petition.assigned_inspector_id == insp.id %}selected{% endif %}>{{ insp.full_name }}</option>
                                 {% endfor %}
                             </select>
                             {% if not inspectors %}
                             <small id="inspector-map-help" class="form-help">No field inspectors are mapped to this officer. Add/map in User Management.</small>
+                            {% endif %}
                             {% endif %}
                         </div>
                         {% if not petition.requires_permission %}
                         <div class="form-group">
                             <label>Enquiry Type Decision <span class="required">*</span></label>
                             <select name="enquiry_type_decision" required>
-                                <option value="">-- Select Enquiry Type --</option>
-                                <option value="detailed" {% if petition.enquiry_type == 'detailed' %}selected{% endif %}>Detailed</option>
-                                <option value="preliminary" {% if petition.enquiry_type == 'preliminary' %}selected{% endif %}>Preliminary</option>
+                                <option value="" selected>-- Select Enquiry Type --</option>
+                                <option value="detailed">Detailed</option>
+                                <option value="preliminary">Preliminary</option>
                             </select>
                         </div>
                         {% endif %}
@@ -724,7 +746,7 @@
                             <input type="file" name="assignment_memo_file" accept=".pdf">
                         </div>
                         <div class="form-group"><label>Instructions</label><textarea name="comments" rows="2" placeholder="Instructions for the inspector"></textarea></div>
-                        <button type="submit" class="btn btn-primary" {% if not inspectors %}disabled title="Map field inspectors to this officer in User Management first"{% endif %}>Assign Inspector</button>
+                        <button type="submit" class="btn btn-primary" {% if (not conversion_reassignment_locked) and (not inspectors) %}disabled title="Map field inspectors to this officer in User Management first"{% endif %}>Assign Inspector</button>
                     </form>
                 </div>
                 {% endif %}
@@ -736,12 +758,18 @@
                     <div class="form-group">
                         <label data-i18n="petition.view.select_action">Select Action</label>
                         <select id="cvo_next_step_selector" onchange="toggleCvoNextStepFields()">
-                            <option value="forward" data-i18n="petition.view.forward_to_po">Forward to PO</option>
-                            <option value="reenquiry" data-i18n="petition.view.send_back_reenquiry">Send Back for Re-enquiry</option>
+                            <option value="forward" data-i18n="petition.view.forward_to_po" {% if inspector_conversion_request_pending %}disabled{% endif %}>Forward to PO</option>
+                            <option value="reenquiry" data-i18n="petition.view.send_back_reenquiry" {% if inspector_conversion_request_pending %}disabled{% endif %}>Send Back for Re-enquiry</option>
+                            {% if enquiry_type_norm == 'preliminary' %}
+                            <option value="conversion" {% if inspector_conversion_request_pending %}selected{% endif %}>Ask Permission to Convert to Detailed</option>
+                            {% endif %}
                             {% if petition.source_of_petition == 'media' %}
-                            <option value="direct_lodge">Direct Lodge</option>
+                            <option value="direct_lodge" {% if inspector_conversion_request_pending %}disabled{% endif %}>Direct Lodge</option>
                             {% endif %}
                         </select>
+                        {% if inspector_conversion_request_pending %}
+                        <small class="form-help">Field officer requested conversion to detailed enquiry. Other CVO actions are disabled.</small>
+                        {% endif %}
                     </div>
 
                     <div id="cvo_forward_wrap">
@@ -787,6 +815,22 @@
                         </form>
                     </div>
                     {% endif %}
+                    {% if enquiry_type_norm == 'preliminary' %}
+                    <div id="cvo_conversion_wrap" style="display:none;">
+                        <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}" enctype="multipart/form-data">
+                            <input type="hidden" name="action" value="request_detailed_enquiry">
+                            <div class="form-group">
+                                <label>CVO/DSP Remarks <span class="required">*</span></label>
+                                <textarea name="cvo_comments" rows="3" required placeholder="Reason for converting preliminary enquiry to detailed enquiry"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Prima Facie Document (PDF, Optional)</label>
+                                <input type="file" name="prima_facie_file" accept=".pdf">
+                            </div>
+                            <button type="submit" class="btn btn-warning">Request PO Permission for Detailed Enquiry</button>
+                        </form>
+                    </div>
+                    {% endif %}
 
                     <script>
                     function toggleCvoNextStepFields() {
@@ -794,28 +838,24 @@
                         const forwardWrap = document.getElementById('cvo_forward_wrap');
                         const reenquiryWrap = document.getElementById('cvo_reenquiry_wrap');
                         const directLodgeWrap = document.getElementById('cvo_direct_lodge_wrap');
+                        const conversionWrap = document.getElementById('cvo_conversion_wrap');
                         if (!selector || !forwardWrap || !reenquiryWrap) return;
+                        if ({{ 'true' if inspector_conversion_request_pending else 'false' }}) {
+                            selector.value = 'conversion';
+                        }
                         const selected = selector.value;
                         forwardWrap.style.display = selected === 'forward' ? '' : 'none';
                         reenquiryWrap.style.display = selected === 'reenquiry' ? '' : 'none';
                         if (directLodgeWrap) {
                             directLodgeWrap.style.display = selected === 'direct_lodge' ? '' : 'none';
                         }
+                        if (conversionWrap) {
+                            conversionWrap.style.display = selected === 'conversion' ? '' : 'none';
+                        }
                     }
                     toggleCvoNextStepFields();
                     </script>
                 </div>
-                {% if petition.enquiry_type == 'preliminary' %}
-                <div class="action-divider">OR</div>
-                <div class="action-panel">
-                    <h4>Preliminary Completed - Request Detailed Enquiry Permission</h4>
-                    <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}">
-                        <input type="hidden" name="action" value="request_detailed_enquiry">
-                        <div class="form-group"><label>CVO/DSP Remarks</label><textarea name="cvo_comments" rows="4" required placeholder="Reason for converting preliminary enquiry to detailed enquiry"></textarea></div>
-                        <button type="submit" class="btn btn-warning">Request PO Permission for Detailed Enquiry</button>
-                    </form>
-                </div>
-                {% endif %}
                 {% endif %}
             {% endif %}
 
@@ -872,7 +912,17 @@
                     {% endif %}
                     <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}" enctype="multipart/form-data">
                         <input type="hidden" name="action" value="submit_report">
+                        {% if enquiry_type_norm == 'preliminary' %}
+                        <div class="form-group">
+                            <label>Next Step <span class="required">*</span></label>
+                            <select id="report_next_step_{{ petition.id }}" name="report_next_step" required>
+                                <option value="send_to_cvo" selected>Send Report to CVO</option>
+                                <option value="ask_detailed_permission">Ask Permission to Convert to Detailed</option>
+                            </select>
+                        </div>
+                        {% endif %}
                         {% if petition.petition_type == 'electrical_accident' %}
+                        <div id="accident_fields_group_{{ petition.id }}">
                         <div class="form-group">
                             <label><span data-i18n="petition.view.accident_type">Type of Accident</span> <span class="required">*</span></label>
                             <select name="accident_type" required>
@@ -919,12 +969,58 @@
                             <label>No. of Animals <span class="required">*</span></label>
                             <input id="animals_count_input" type="number" min="1" step="1" name="animals_count" placeholder="Enter number of animals">
                         </div>
+                        </div>
                         {% endif %}
-                        <div class="form-group"><label>{{ f_inspector_report_text.label }}{% if f_inspector_report_text.required %} <span class="required">*</span>{% endif %}</label><textarea name="report_text" rows="5" {% if f_inspector_report_text.required %}required{% endif %} placeholder="Enter conclusion of enquiry report"></textarea></div>
-                        <div class="form-group"><label>{{ f_inspector_recommendation.label }}{% if f_inspector_recommendation.required %} <span class="required">*</span>{% endif %}</label><textarea name="recommendation" rows="3" {% if f_inspector_recommendation.required %}required{% endif %} placeholder="Enter recommendations/suggestions"></textarea></div>
-                        <div class="form-group"><label>{{ f_inspector_report_file.label }}{% if f_inspector_report_file.required %} <span class="required">*</span>{% endif %}</label><input type="file" name="report_file" accept=".pdf" {% if f_inspector_report_file.required %}required{% endif %}></div>
-                        <button type="submit" class="btn btn-primary">Upload Report</button>
+                        <div class="form-group" id="report_text_group_{{ petition.id }}"><label>{{ f_inspector_report_text.label }}{% if f_inspector_report_text.required %} <span class="required">*</span>{% endif %}</label><textarea id="report_text_input_{{ petition.id }}" name="report_text" rows="5" {% if f_inspector_report_text.required %}required{% endif %} placeholder="Enter conclusion of enquiry report"></textarea></div>
+                        <div class="form-group" id="recommendation_group_{{ petition.id }}"><label>{{ f_inspector_recommendation.label }}{% if f_inspector_recommendation.required %} <span class="required">*</span>{% endif %}</label><textarea id="recommendation_input_{{ petition.id }}" name="recommendation" rows="3" {% if f_inspector_recommendation.required %}required{% endif %} placeholder="Enter recommendations/suggestions"></textarea></div>
+                        {% if enquiry_type_norm == 'preliminary' %}
+                        <div class="form-group" id="detailed_request_reason_group_{{ petition.id }}" style="display:none;">
+                            <label>{{ f_inspector_detailed_reason.label or 'Reason for Detailed Enquiry Request' }}{% if f_inspector_detailed_reason.required %} <span class="required">*</span>{% endif %}</label>
+                            <textarea id="detailed_request_reason_{{ petition.id }}" name="detailed_request_reason" rows="3" placeholder="Explain why detailed enquiry conversion is required"></textarea>
+                        </div>
+                        {% endif %}
+                        <div class="form-group" id="report_file_group_{{ petition.id }}"><label>{{ f_inspector_report_file.label }}{% if f_inspector_report_file.required %} <span class="required">*</span>{% endif %}</label><input id="report_file_input_{{ petition.id }}" type="file" name="report_file" accept=".pdf" {% if f_inspector_report_file.required %}required{% endif %}></div>
+                        <button type="submit" id="report_submit_btn_{{ petition.id }}" class="btn btn-primary">Upload Report</button>
                     </form>
+                    {% if enquiry_type_norm == 'preliminary' %}
+                    <script>
+                    (function() {
+                        const nextStep = document.getElementById('report_next_step_{{ petition.id }}');
+                        const reasonWrap = document.getElementById('detailed_request_reason_group_{{ petition.id }}');
+                        const reasonInput = document.getElementById('detailed_request_reason_{{ petition.id }}');
+                        const reportTextGroup = document.getElementById('report_text_group_{{ petition.id }}');
+                        const reportTextInput = document.getElementById('report_text_input_{{ petition.id }}');
+                        const recommendationGroup = document.getElementById('recommendation_group_{{ petition.id }}');
+                        const recommendationInput = document.getElementById('recommendation_input_{{ petition.id }}');
+                        const reportFileGroup = document.getElementById('report_file_group_{{ petition.id }}');
+                        const reportFileInput = document.getElementById('report_file_input_{{ petition.id }}');
+                        const submitBtn = document.getElementById('report_submit_btn_{{ petition.id }}');
+                        const accidentGroup = document.getElementById('accident_fields_group_{{ petition.id }}');
+                        if (!nextStep || !reasonWrap || !reasonInput || !reportTextGroup || !reportTextInput || !recommendationGroup || !recommendationInput || !reportFileGroup || !reportFileInput || !submitBtn) return;
+                        function syncDetailedRequestUI() {
+                            const askPermission = (nextStep.value || 'send_to_cvo') === 'ask_detailed_permission';
+                            reasonWrap.style.display = askPermission ? '' : 'none';
+                            reasonInput.required = askPermission && {{ 'true' if f_inspector_detailed_reason.required else 'false' }};
+                            reportTextGroup.style.display = askPermission ? 'none' : '';
+                            recommendationGroup.style.display = askPermission ? 'none' : '';
+                            reportFileGroup.style.display = askPermission ? 'none' : '';
+                            reportTextInput.required = !askPermission && {{ 'true' if f_inspector_report_text.required else 'false' }};
+                            recommendationInput.required = !askPermission && {{ 'true' if f_inspector_recommendation.required else 'false' }};
+                            reportFileInput.required = !askPermission && {{ 'true' if f_inspector_report_file.required else 'false' }};
+                            if (accidentGroup) {
+                                accidentGroup.style.display = askPermission ? 'none' : '';
+                                accidentGroup.querySelectorAll('[required]').forEach((el) => {
+                                    el.dataset.wasRequired = '1';
+                                    el.required = !askPermission;
+                                });
+                            }
+                            submitBtn.textContent = askPermission ? 'Send Conversion Request' : 'Upload Report';
+                        }
+                        nextStep.addEventListener('change', syncDetailedRequestUI);
+                        syncDetailedRequestUI();
+                    })();
+                    </script>
+                    {% endif %}
                     {% if petition.petition_type == 'electrical_accident' %}
                     <script>
                     function toggleElectricalAccidentCategoryFields() {
@@ -1036,6 +1132,11 @@
                     </div>
                     {% if t.comments %}
                     <p class="timeline-comment">{{ t.comments }}</p>
+                    {% endif %}
+                    {% if t.attachment_file %}
+                    <p class="timeline-comment">
+                        <a href="{{ url_for('enquiry_file', filename=t.attachment_file) }}" target="_blank" class="btn btn-xs btn-outline">View Attachment</a>
+                    </p>
                     {% endif %}
                 </div>
             </div>

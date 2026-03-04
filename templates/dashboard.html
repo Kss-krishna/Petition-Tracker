@@ -424,7 +424,10 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+<script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"
+    onerror="this.onerror=null;this.src='{{ url_for('static', filename='js/vendor/chart.umd.min.js') }}';"
+></script>
 <script>
 let analyticsData = {{ analytics|tojson }};
 let dashCurrentRows = [];
@@ -635,7 +638,8 @@ function initAnalyticsDashboard() {
         'Electronic and Print Media': 'source:media',
         'Public': 'source:public_individual',
         'Govt': 'source:govt',
-        'Sumoto': 'source:sumoto'
+        'Sumoto': 'source:sumoto',
+        'O/o CMD': 'source:cmd_office'
     };
 
     const modeMetricMap = {

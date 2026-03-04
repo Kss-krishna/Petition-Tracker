@@ -6363,6 +6363,58 @@ html[data-theme='dark'] .dashboard-filter-art {
     background: linear-gradient(180deg, rgba(16, 33, 61, 0.76), rgba(12, 24, 46, 0.86));
 }
 
+/* Dark theme visibility safety net */
+html[data-theme='dark'] .card,
+html[data-theme='dark'] .card *:not(.status-badge):not(.list-status):not(.badge):not(.sla-chip):not(.sla-state-pill) {
+    color: inherit;
+}
+
+html[data-theme='dark'] .card,
+html[data-theme='dark'] .action-panel,
+html[data-theme='dark'] .report-card,
+html[data-theme='dark'] .workflow-step-card,
+html[data-theme='dark'] .dash-modal-panel,
+html[data-theme='dark'] .notif-menu,
+html[data-theme='dark'] .profile-menu {
+    color: #e8eefc;
+}
+
+html[data-theme='dark'] .card-header h1,
+html[data-theme='dark'] .card-header h2,
+html[data-theme='dark'] .card-header h3,
+html[data-theme='dark'] .card-header h4,
+html[data-theme='dark'] .card-header h5,
+html[data-theme='dark'] .card-header h6,
+html[data-theme='dark'] .action-panel h4,
+html[data-theme='dark'] .form-group label,
+html[data-theme='dark'] .data-table thead th,
+html[data-theme='dark'] .report-stage-name,
+html[data-theme='dark'] .table-footer {
+    color: #dbe8ff;
+}
+
+html[data-theme='dark'] .form-help,
+html[data-theme='dark'] .empty-state,
+html[data-theme='dark'] .empty-state p,
+html[data-theme='dark'] .card-header p,
+html[data-theme='dark'] .info-label,
+html[data-theme='dark'] .stat-label {
+    color: #b7c7df;
+}
+
+html[data-theme='dark'] input::placeholder,
+html[data-theme='dark'] textarea::placeholder {
+    color: #9fb3d1;
+    opacity: 1;
+}
+
+html[data-theme='dark'] input,
+html[data-theme='dark'] select,
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] button {
+    color: #edf3ff;
+}
+
 html[data-theme='dark'] .dashboard-applied-title {
     color: #dce9ff;
 }
@@ -6578,6 +6630,51 @@ html[data-theme='dark'] .petitions-page-card .list-status {
     border: 1px solid color-mix(in srgb, var(--status-color) 58%, #ffffff 42%);
     background: color-mix(in srgb, var(--status-color) 26%, transparent);
 }
+
+html[data-theme='dark'] .main-sla-mini {
+    background: linear-gradient(145deg, rgba(30, 64, 175, 0.22), rgba(15, 23, 42, 0.45));
+    border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+html[data-theme='dark'] .main-sla-mini-title h3 {
+    color: #f4f8ff;
+}
+
+html[data-theme='dark'] .main-sla-mini-title p {
+    color: #c4d2e8;
+}
+
+html[data-theme='dark'] .main-sla-mini-kpi {
+    border-color: rgba(148, 163, 184, 0.42);
+}
+
+html[data-theme='dark'] .main-sla-mini-kpi .l {
+    color: #dbe8ff;
+}
+
+html[data-theme='dark'] .main-sla-mini-kpi.is-total {
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.36), rgba(59, 130, 246, 0.24));
+    border-color: rgba(147, 197, 253, 0.52);
+}
+html[data-theme='dark'] .main-sla-mini-kpi.is-total .v { color: #eff6ff; }
+
+html[data-theme='dark'] .main-sla-mini-kpi.is-open {
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.36), rgba(245, 158, 11, 0.24));
+    border-color: rgba(252, 211, 77, 0.52);
+}
+html[data-theme='dark'] .main-sla-mini-kpi.is-open .v { color: #fffbeb; }
+
+html[data-theme='dark'] .main-sla-mini-kpi.is-closed {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.36), rgba(16, 185, 129, 0.24));
+    border-color: rgba(110, 231, 183, 0.52);
+}
+html[data-theme='dark'] .main-sla-mini-kpi.is-closed .v { color: #ecfdf5; }
+
+html[data-theme='dark'] .main-sla-mini-kpi.is-beyond {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.36), rgba(239, 68, 68, 0.24));
+    border-color: rgba(252, 165, 165, 0.52);
+}
+html[data-theme='dark'] .main-sla-mini-kpi.is-beyond .v { color: #fef2f2; }
 
 html[data-theme='dark'] .petitions-page-card .data-table tbody tr:nth-child(even) {
     background: #122646;

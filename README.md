@@ -52,6 +52,12 @@ cd Petition-Tracker
 pip install -r requirements.txt
 ```
 
+For reproducible/audit-ready installs, use the pinned lock file:
+
+```bash
+pip install -r requirements-lock.txt
+```
+
 ### 3. Create Database
 Open pgAdmin or psql and run:
 ```sql
@@ -110,6 +116,14 @@ DB_SSLMODE=require
 PORT=5000
 UPLOAD_BASE_DIR=/var/app/uploads
 MAX_UPLOAD_SIZE_MB=10
+
+# OTP login (enabled by default)
+OTP_LOGIN_ENABLED=1
+OTP_SEND_URL=https://<otp-gateway>/sendOTP
+OTP_VERIFY_URL=https://<otp-gateway>/verifyOTP
+OTP_AUTH_USERNAME=<otp-user>
+OTP_AUTH_PASSWORD=<otp-password>
+OTP_SERVICE_USER_ID=<otp-service-id>
 ```
 
 ### 5. Create Super Admin User
@@ -167,6 +181,20 @@ Current enforced test rules:
 - Minimum total coverage required: `90%`.
 
 If all pass, your syntax, lint safety rules, and stricter regression gates are green.
+
+## Security CI and SCA
+
+- GitHub Actions workflow: `.github/workflows/security-ci.yml`
+- Includes:
+  - compile + lint + tests
+  - dependency integrity check (`pip check`)
+  - vulnerability scan (`pip-audit --strict`)
+
+## Security Monitoring
+
+- Structured security event logging is implemented in application code.
+- Monitoring/alert policy is documented in:
+  - `SECURITY_MONITORING_POLICY.md`
 
 ## Petition Fields
 - S.No (auto-generated: VIG/JMD/2025/0001)

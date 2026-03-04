@@ -744,22 +744,41 @@ function initPetitionerProfiles() {
 
     const ensureChartJs = async () => {
         if (window.Chart) return true;
-        try {
-            await new Promise((resolve, reject) => {
-                const existing = document.querySelector('script[data-chartjs-global="1"]');
-                if (existing) {
-                    existing.addEventListener('load', resolve, { once: true });
-                    existing.addEventListener('error', reject, { once: true });
+        const scriptSources = [
+            'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js',
+            '/static/js/vendor/chart.umd.min.js'
+        ];
+
+        const loadScript = (src) => new Promise((resolve, reject) => {
+            const existing = document.querySelector(`script[data-chartjs-src="${src}"]`);
+            if (existing) {
+                if (window.Chart) {
+                    resolve();
                     return;
                 }
-                const script = document.createElement('script');
-                script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js';
-                script.dataset.chartjsGlobal = '1';
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
-            });
-            return !!window.Chart;
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', reject, { once: true });
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = src;
+            script.dataset.chartjsGlobal = '1';
+            script.dataset.chartjsSrc = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+
+        try {
+            for (const src of scriptSources) {
+                try {
+                    await loadScript(src);
+                    if (window.Chart) return true;
+                } catch (_) {
+                    // Try next source.
+                }
+            }
+            return false;
         } catch (_) {
             return false;
         }

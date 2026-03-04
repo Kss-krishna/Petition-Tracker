@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from functools import wraps
 from config import Config
 import models
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from collections import Counter
 import os
 import io
@@ -14,6 +14,11 @@ import json
 import base64
 import urllib.request
 import urllib.error
+import urllib.parse
+import ipaddress
+import time
+import hmac
+import secrets
 from uuid import uuid4
 from werkzeug.utils import secure_filename
 try:
@@ -27,6 +32,8 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = config.SESSION_COOKIE_SECURE
+app.config['MAX_CONTENT_LENGTH'] = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=max(15, config.SESSION_LIFETIME_MINUTES))
 
 if os.getenv('SKIP_SCHEMA_UPDATES') != '1':
     models.ensure_schema_updates()
@@ -38,6 +45,7 @@ PROFILE_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, 'profile_photos')
 MAX_UPLOAD_SIZE_BYTES = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 PROFILE_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 PROFILE_PHOTO_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+LOGIN_ATTEMPTS = {}
 VALID_RECEIVED_AT = {'jmd_office', 'cvo_apspdcl_tirupathi', 'cvo_apepdcl_vizag', 'cvo_apcpdcl_vijayawada'}
 VALID_TARGET_CVO = {'apspdcl', 'apepdcl', 'apcpdcl', 'headquarters'}
 VALID_ORGANIZATIONS = {'aptransco', 'apgenco'}
@@ -729,6 +737,53 @@ def validate_profile_photo_upload(file_obj, user_id=None):
     return True, stored_name, None
 
 
+def validate_password_strength(password, label='Password'):
+    value = password or ''
+    if len(value) < 8:
+        return False, f'{label} must be at least 8 characters.'
+    if not re.search(r'[A-Z]', value):
+        return False, f'{label} must include at least one uppercase letter.'
+    if not re.search(r'[a-z]', value):
+        return False, f'{label} must include at least one lowercase letter.'
+    if not re.search(r'[0-9]', value):
+        return False, f'{label} must include at least one number.'
+    if not re.search(r'[^A-Za-z0-9]', value):
+        return False, f'{label} must include at least one special character.'
+    return True, None
+
+
+def flash_internal_error(user_message='Something went wrong. Please contact administrator.'):
+    app.logger.exception(user_message)
+    flash(user_message, 'danger')
+
+
+def log_security_event(event_type, severity='warning', **details):
+    payload = {
+        'event_type': event_type,
+        'severity': severity,
+        'ts': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+    }
+    if has_request_context():
+        payload.update({
+            'path': request.path,
+            'method': request.method,
+            'ip': _client_ip(),
+            'user_agent': request.headers.get('User-Agent', ''),
+            'user_id': session.get('user_id'),
+            'user_role': session.get('user_role'),
+        })
+    for key, value in details.items():
+        if value is not None:
+            payload[key] = value
+    message = json.dumps(payload, ensure_ascii=True, default=str)
+    if severity in ('critical', 'error'):
+        app.logger.error(message)
+    elif severity == 'info':
+        app.logger.info(message)
+    else:
+        app.logger.warning(message)
+
+
 def delete_profile_photo_file(filename):
     if not filename:
         return
@@ -757,6 +812,202 @@ def refresh_session_user():
 
 
 ensure_upload_dirs()
+
+
+def _get_or_create_csrf_token():
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+
+def _client_ip():
+    forwarded_for = (request.headers.get('X-Forwarded-For') or '').split(',')[0].strip()
+    if forwarded_for:
+        return forwarded_for
+    return request.remote_addr or 'unknown'
+
+
+def _cleanup_login_attempts(now_ts):
+    stale_before = now_ts - max(config.LOGIN_RATE_LIMIT_WINDOW_SECONDS, config.LOGIN_RATE_LIMIT_BLOCK_SECONDS) - 60
+    stale_keys = [k for k, v in LOGIN_ATTEMPTS.items() if (v.get('last_seen') or 0) < stale_before]
+    for key in stale_keys:
+        LOGIN_ATTEMPTS.pop(key, None)
+
+
+def _is_login_blocked():
+    now_ts = time.time()
+    _cleanup_login_attempts(now_ts)
+    entry = LOGIN_ATTEMPTS.get(_client_ip(), {})
+    blocked_until = float(entry.get('blocked_until') or 0)
+    if blocked_until > now_ts:
+        return True, int(blocked_until - now_ts)
+    return False, 0
+
+
+def _register_login_failure():
+    now_ts = time.time()
+    ip = _client_ip()
+    _cleanup_login_attempts(now_ts)
+    entry = LOGIN_ATTEMPTS.get(ip, {'attempts': [], 'blocked_until': 0, 'last_seen': now_ts})
+    window_start = now_ts - config.LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    recent = [ts for ts in entry.get('attempts', []) if ts >= window_start]
+    recent.append(now_ts)
+    entry['attempts'] = recent
+    entry['last_seen'] = now_ts
+    if len(recent) >= config.LOGIN_RATE_LIMIT_MAX_ATTEMPTS:
+        entry['blocked_until'] = now_ts + config.LOGIN_RATE_LIMIT_BLOCK_SECONDS
+        log_security_event(
+            'auth.login_lockout_triggered',
+            severity='warning',
+            failed_attempts=len(recent),
+            blocked_seconds=config.LOGIN_RATE_LIMIT_BLOCK_SECONDS,
+        )
+    LOGIN_ATTEMPTS[ip] = entry
+    log_security_event('auth.login_failed', severity='warning', failed_attempts=len(recent))
+
+
+def _clear_login_failures():
+    LOGIN_ATTEMPTS.pop(_client_ip(), None)
+
+
+def _can_access_petition(petition_id):
+    user_id = session.get('user_id')
+    user_role = session.get('user_role')
+    cvo_office = session.get('cvo_office')
+    if not user_id or not user_role:
+        return False
+    if not hasattr(models, 'get_petitions_for_user'):
+        # Test stubs may not expose full data-access surface.
+        return True
+    try:
+        pid = int(petition_id)
+    except (TypeError, ValueError):
+        return False
+    petitions = get_petitions_for_user_cached(user_id, user_role, cvo_office, status_filter=None, enquiry_mode='all')
+    return any(int(p.get('id') or 0) == pid for p in petitions)
+
+
+def _can_access_cvo_scope(cvo_id):
+    role = session.get('user_role')
+    try:
+        current_user_id = int(session.get('user_id') or 0)
+        target_id = int(cvo_id or 0)
+    except (TypeError, ValueError):
+        return False
+    if not current_user_id or not target_id:
+        return False
+    if role == 'super_admin':
+        return True
+    if role not in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+        return False
+    if current_user_id == target_id:
+        return True
+
+    current_user = models.get_user_by_id(current_user_id)
+    target_user = models.get_user_by_id(target_id)
+    if not current_user or not target_user:
+        return False
+    if target_user.get('role') not in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+        return False
+
+    current_office = (current_user.get('cvo_office') or '').strip().lower()
+    target_office = (target_user.get('cvo_office') or '').strip().lower()
+    if role in ('cvo_apspdcl', 'cvo_apcpdcl'):
+        return current_office in ('apspdcl', 'apcpdcl') and target_office in ('apspdcl', 'apcpdcl')
+    return bool(current_office and current_office == target_office)
+
+
+def _petition_id_from_filename(filename):
+    match = re.search(r'_(\d+)_', filename or '')
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _has_pending_inspector_detailed_request(tracking_rows):
+    if not tracking_rows:
+        return False
+    last_report_idx = -1
+    for idx, row in enumerate(tracking_rows):
+        if (row.get('action') or '').strip() == 'Enquiry Report Submitted':
+            last_report_idx = idx
+    if last_report_idx < 0:
+        return False
+    for row in tracking_rows[last_report_idx + 1:]:
+        if (row.get('action') or '').strip() == 'Inspector Requested Detailed Enquiry Permission':
+            return True
+    return False
+
+
+def _is_conversion_permission_stage(petition, tracking_rows):
+    if not petition or (petition.get('status') or '').strip() != 'sent_for_permission':
+        return False
+    for row in reversed(tracking_rows or []):
+        action = (row.get('action') or '').strip().lower()
+        if 'requested po permission for detailed enquiry' in action:
+            return True
+        if 'inspector requested detailed enquiry permission' in action:
+            return True
+        if action in {'permission approved - sent to cvo', 'permission rejected'}:
+            # Older permission-cycle events encountered first: stop scanning.
+            break
+    return False
+
+
+def _has_conversion_request_history(tracking_rows):
+    for row in tracking_rows or []:
+        action = (row.get('action') or '').strip().lower()
+        if 'requested po permission for detailed enquiry' in action:
+            return True
+        if 'inspector requested detailed enquiry permission' in action:
+            return True
+    return False
+
+
+@app.before_request
+def _security_before_request():
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        if app.config.get('TESTING'):
+            return None
+        if 'user_id' in session:
+            sent_token = (request.form.get('_csrf_token') or request.headers.get('X-CSRF-Token') or '').strip()
+            expected_token = session.get('_csrf_token') or ''
+            if not expected_token or not sent_token or not hmac.compare_digest(sent_token, expected_token):
+                log_security_event('web.csrf_validation_failed', severity='warning')
+                flash('Security validation failed. Please refresh and try again.', 'danger')
+                return redirect(request.referrer or url_for('dashboard'))
+    if 'user_id' in session:
+        session.permanent = True
+        _get_or_create_csrf_token()
+    return None
+
+
+@app.after_request
+def _security_after_request(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+    response.headers.setdefault('Cross-Origin-Opener-Policy', 'same-origin')
+    response.headers.setdefault('Cross-Origin-Resource-Policy', 'same-origin')
+    if config.IS_PRODUCTION:
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'"
+        )
+    return response
 
 
 def get_effective_form_field_configs():
@@ -845,17 +1096,44 @@ def _mask_mobile(mobile):
 
 
 def _otp_settings():
+    allowed_hosts_raw = os.getenv('OTP_HTTP_ALLOWED_HOSTS', '').strip()
+    allowed_hosts = [h.strip().lower() for h in allowed_hosts_raw.split(',') if h.strip()]
     return {
-        'send_url': os.getenv('OTP_SEND_URL', 'http://10.96.76.164:5050/sendOTP').strip(),
-        'verify_url': os.getenv('OTP_VERIFY_URL', 'http://10.96.76.164:5050/verifyOTP').strip(),
-        'auth_user': os.getenv('OTP_AUTH_USERNAME', 'aptresr').strip(),
-        'auth_pass': os.getenv('OTP_AUTH_PASSWORD', 'Sr@09S$2252').strip(),
+        'send_url': os.getenv('OTP_SEND_URL', '').strip(),
+        'verify_url': os.getenv('OTP_VERIFY_URL', '').strip(),
+        'auth_user': os.getenv('OTP_AUTH_USERNAME', '').strip(),
+        'auth_pass': os.getenv('OTP_AUTH_PASSWORD', '').strip(),
         'otp_type': os.getenv('OTP_TYPE', 'otp').strip(),
         'app_name': os.getenv('OTP_APP_NAME', 'ita').strip(),
         'message': os.getenv('OTP_MESSAGE_TEXT', 'Nigaa Authorization OTP is : ').strip(),
-        'user_id': os.getenv('OTP_SERVICE_USER_ID', '1025872').strip(),
+        'user_id': os.getenv('OTP_SERVICE_USER_ID', '').strip(),
         'timeout': int((os.getenv('OTP_HTTP_TIMEOUT_SEC') or '15').strip()),
+        'allow_http_internal': os.getenv('OTP_ALLOW_HTTP_INTERNAL', '0').strip().lower() in ('1', 'true', 'yes', 'on'),
+        'http_allowed_hosts': set(allowed_hosts),
+        'http_exception_ticket': os.getenv('OTP_HTTP_EXCEPTION_TICKET', '').strip(),
+        'http_exception_approved_by': os.getenv('OTP_HTTP_EXCEPTION_APPROVED_BY', '').strip(),
+        'http_exception_reason': os.getenv('OTP_HTTP_EXCEPTION_REASON', '').strip(),
     }
+
+
+def _otp_settings_valid(settings):
+    required = ('send_url', 'verify_url', 'auth_user', 'auth_pass', 'user_id')
+    return all((settings.get(key) or '').strip() for key in required)
+
+
+def _otp_missing_config_keys(settings):
+    key_map = {
+        'send_url': 'OTP_SEND_URL',
+        'verify_url': 'OTP_VERIFY_URL',
+        'auth_user': 'OTP_AUTH_USERNAME',
+        'auth_pass': 'OTP_AUTH_PASSWORD',
+        'user_id': 'OTP_SERVICE_USER_ID',
+    }
+    missing = []
+    for internal, env_key in key_map.items():
+        if not (settings.get(internal) or '').strip():
+            missing.append(env_key)
+    return missing
 
 
 def _otp_post(url, payload, settings):
@@ -883,6 +1161,58 @@ def _otp_post(url, payload, settings):
         return False, data
     except Exception as e:
         return False, {'error': str(e)}
+
+
+def _otp_host_is_internal_or_allowlisted(hostname, settings):
+    host = (hostname or '').strip().lower()
+    if not host:
+        return False
+    if host in settings.get('http_allowed_hosts', set()):
+        return True
+    if host in {'localhost', '127.0.0.1', '::1'}:
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+        return bool(addr.is_private or addr.is_loopback or addr.is_link_local)
+    except ValueError:
+        # Non-IP hostname is permitted only when explicitly allowlisted.
+        return False
+
+
+def _otp_transport_errors(settings):
+    errors = []
+    for key in ('send_url', 'verify_url'):
+        url = (settings.get(key) or '').strip()
+        if not url:
+            continue
+        parsed = urllib.parse.urlparse(url)
+        scheme = (parsed.scheme or '').lower()
+        hostname = parsed.hostname
+        env_key = 'OTP_SEND_URL' if key == 'send_url' else 'OTP_VERIFY_URL'
+
+        if scheme == 'https':
+            continue
+        if scheme != 'http':
+            errors.append(f'{env_key} must use https:// (or approved internal http:// exception).')
+            continue
+        if not settings.get('allow_http_internal'):
+            errors.append(f'{env_key} uses http://. Set HTTPS endpoint or explicitly approve internal HTTP exception.')
+            continue
+        if not _otp_host_is_internal_or_allowlisted(hostname, settings):
+            errors.append(
+                f'{env_key} host must be private IP/localhost or in OTP_HTTP_ALLOWED_HOSTS when using internal HTTP exception.'
+            )
+            continue
+        if not (
+            settings.get('http_exception_ticket')
+            and settings.get('http_exception_approved_by')
+            and settings.get('http_exception_reason')
+        ):
+            errors.append(
+                'OTP internal HTTP exception requires OTP_HTTP_EXCEPTION_TICKET, '
+                'OTP_HTTP_EXCEPTION_APPROVED_BY, and OTP_HTTP_EXCEPTION_REASON.'
+            )
+    return errors
 
 
 def _otp_success(data):
@@ -916,6 +1246,12 @@ def _otp_success(data):
 
 def _send_login_otp(mobile):
     settings = _otp_settings()
+    if not _otp_settings_valid(settings):
+        missing = ', '.join(_otp_missing_config_keys(settings))
+        return False, f'OTP gateway is not configured. Missing: {missing}.'
+    transport_errors = _otp_transport_errors(settings)
+    if transport_errors:
+        return False, f"OTP transport policy violation: {'; '.join(transport_errors)}"
     payload = {
         'mobileno': mobile,
         'otpType': settings['otp_type'],
@@ -932,6 +1268,12 @@ def _send_login_otp(mobile):
 
 def _verify_login_otp(mobile, otp_code):
     settings = _otp_settings()
+    if not _otp_settings_valid(settings):
+        missing = ', '.join(_otp_missing_config_keys(settings))
+        return False, f'OTP gateway is not configured. Missing: {missing}.'
+    transport_errors = _otp_transport_errors(settings)
+    if transport_errors:
+        return False, f"OTP transport policy violation: {'; '.join(transport_errors)}"
     payload = {
         'mobileno': mobile,
         'otpcode': otp_code,
@@ -951,6 +1293,7 @@ def _clear_pending_otp():
 
 
 def _activate_login_session(user):
+    session.clear()
     session['user_id'] = user['id']
     session['username'] = user['username']
     session['full_name'] = user['full_name']
@@ -959,6 +1302,8 @@ def _activate_login_session(user):
     session['phone'] = user.get('phone')
     session['email'] = user.get('email')
     session['profile_photo'] = user.get('profile_photo')
+    session.permanent = True
+    _get_or_create_csrf_token()
 
 
 def resolve_efile_no_for_action(petition, incoming_efile_no, required_message=None):
@@ -989,6 +1334,7 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
+            log_security_event('access.unauthenticated_request', severity='warning')
             flash('Please login to access this page.', 'warning')
             return redirect(url_for('login'))
         return f(*args, **kwargs)
@@ -999,6 +1345,7 @@ def role_required(*roles):
         @wraps(f)
         def decorated(*args, **kwargs):
             if 'user_role' not in session or session['user_role'] not in roles:
+                log_security_event('access.role_forbidden', severity='warning', required_roles=','.join(roles))
                 flash('You do not have permission to access this page.', 'danger')
                 return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
@@ -1171,6 +1518,7 @@ def inject_globals():
         current_user_profile_photo_url=(
             url_for('profile_photo_file', filename=profile_photo) if profile_photo else None
         ),
+        csrf_token=_get_or_create_csrf_token(),
         notification=notification,
         now=datetime.now()
     )
@@ -1267,6 +1615,11 @@ def login():
 
     if request.method == 'POST':
         login_action = (request.form.get('login_action') or 'credentials').strip().lower()
+        is_blocked, retry_after = _is_login_blocked()
+        if is_blocked and login_action in {'credentials', 'verify_otp'}:
+            log_security_event('auth.login_blocked', severity='warning', retry_after_seconds=retry_after)
+            flash(f'Too many failed attempts. Try again after {retry_after} seconds.', 'danger')
+            return redirect(url_for('login'))
 
         if login_action == 'reset_otp':
             _clear_pending_otp()
@@ -1302,6 +1655,7 @@ def login():
                 return redirect(url_for('login'))
             ok, msg = _verify_login_otp(pending_mobile, otp_code)
             if not ok:
+                _register_login_failure()
                 flash(msg, 'danger')
                 return redirect(url_for('login'))
 
@@ -1310,10 +1664,13 @@ def login():
             session.pop('login_captcha_answer', None)
             _activate_login_session(pending_user)
             _clear_pending_otp()
+            _clear_login_failures()
+            log_security_event('auth.login_success', severity='info', auth_factor='password+otp')
             flash(f'Welcome, {pending_user["full_name"]}!', 'success')
             return redirect(url_for('dashboard'))
 
         if not validate_login_captcha(request.form.get('captcha_answer')):
+            _register_login_failure()
             flash('Captcha answer is incorrect.', 'warning')
             reset_login_captcha()
             a, b = get_login_captcha()
@@ -1352,6 +1709,7 @@ def login():
                     'profile_photo': user.get('profile_photo'),
                 }
                 session['otp_pending_mobile'] = mobile
+                _clear_login_failures()
                 flash(f'OTP sent to {_mask_mobile(mobile)}.', 'success')
                 return redirect(url_for('login'))
 
@@ -1359,9 +1717,12 @@ def login():
             session.pop('login_captcha_b', None)
             session.pop('login_captcha_answer', None)
             _activate_login_session(user)
+            _clear_login_failures()
+            log_security_event('auth.login_success', severity='info', auth_factor='password')
             flash(f'Welcome, {user["full_name"]}!', 'success')
             return redirect(url_for('dashboard'))
 
+        _register_login_failure()
         flash('Invalid username or password.', 'danger')
         reset_login_captcha()
 
@@ -1386,8 +1747,9 @@ def request_recovery():
     if not username:
         flash('Username is required for password recovery.', 'warning')
         return redirect(url_for('login'))
-    if len(new_password) < 6:
-        flash('New password must be at least 6 characters.', 'warning')
+    ok_password, password_error = validate_password_strength(new_password, 'New password')
+    if not ok_password:
+        flash(password_error, 'warning')
         return redirect(url_for('login'))
     if new_password != confirm_password:
         flash('Password and confirm password do not match.', 'warning')
@@ -1401,7 +1763,7 @@ def request_recovery():
         if 'not found' in error_text:
             flash('Username not found.', 'warning')
         else:
-            flash(f'Unable to submit recovery request: {str(e)}', 'danger')
+            flash_internal_error('Unable to submit recovery request. Please contact administrator.')
     return redirect(url_for('login'))
 
 @app.route('/logout')
@@ -2079,7 +2441,8 @@ def petition_new():
                 flash(f'Petition {result["sno"]} created and auto-forwarded to CVO/DSP successfully!', 'success')
             return redirect(url_for('petition_view', petition_id=result['id']))
         except Exception as e:
-            flash(f'Error creating petition: {str(e)}', 'danger')
+            app.logger.exception('Error creating petition')
+            flash('Unable to create petition. Please contact administrator.', 'danger')
 
     return render_petition_form()
 
@@ -2147,7 +2510,8 @@ def petitions_import_upload():
             allowed_headers=set(IMPORT_PETITION_HEADERS),
         )
     except Exception as e:
-        flash(f'Unable to parse upload file: {str(e)}', 'danger')
+        app.logger.exception('Unable to parse petition import upload file')
+        flash('Unable to parse upload file. Please verify format and retry.', 'danger')
         return redirect(url_for('petitions_import'))
 
     if not rows:
@@ -2317,9 +2681,10 @@ def petitions_import_upload():
                 remarks=(remarks or None),
             )
             created += 1
-        except Exception as e:
+        except Exception:
             failed += 1
-            errors.append(f'Row {idx}: {str(e)}')
+            app.logger.exception('Petition import row failed at row %s', idx)
+            errors.append(f'Row {idx}: internal processing error.')
 
     if created:
         flash(f'Petition import complete. Imported: {created}, Failed: {failed}.', 'success')
@@ -2335,6 +2700,11 @@ def petitions_import_upload():
 @app.route('/petitions/<int:petition_id>')
 @login_required
 def petition_view(petition_id):
+    if not _can_access_petition(petition_id):
+        log_security_event('access.petition_forbidden', severity='warning', petition_id=petition_id)
+        flash('You do not have access to this petition.', 'danger')
+        return redirect(url_for('petitions_list'))
+
     petition = models.get_petition_by_id(petition_id)
     if not petition:
         flash('Petition not found.', 'danger')
@@ -2342,6 +2712,17 @@ def petition_view(petition_id):
     
     tracking = models.get_petition_tracking(petition_id)
     report = models.get_enquiry_report(petition_id)
+    inspector_conversion_request_pending = (
+        petition.get('status') == 'enquiry_report_submitted'
+        and (petition.get('enquiry_type') or '').strip().lower() == 'preliminary'
+        and _has_pending_inspector_detailed_request(tracking)
+    )
+    conversion_permission_stage = _is_conversion_permission_stage(petition, tracking)
+    conversion_reassignment_locked = (
+        petition.get('status') == 'permission_approved'
+        and _has_conversion_request_history(tracking)
+        and bool(petition.get('assigned_inspector_id'))
+    )
     
     # Get inspectors mapped to the relevant CVO/DSP officer
     inspectors = []
@@ -2362,7 +2743,10 @@ def petition_view(petition_id):
     
     return render_template('petition_view.html', 
                          petition=petition, tracking=tracking, report=report,
-                         inspectors=inspectors, cvo_users=cvo_users, cmd_cgm_users=cmd_cgm_users)
+                         inspectors=inspectors, cvo_users=cvo_users, cmd_cgm_users=cmd_cgm_users,
+                         inspector_conversion_request_pending=inspector_conversion_request_pending,
+                         conversion_permission_stage=conversion_permission_stage,
+                         conversion_reassignment_locked=conversion_reassignment_locked)
 
 # ========================================
 # WORKFLOW ACTION ROUTES
@@ -2371,10 +2755,25 @@ def petition_view(petition_id):
 @app.route('/petitions/<int:petition_id>/action', methods=['POST'])
 @login_required
 def petition_action(petition_id):
+    if not _can_access_petition(petition_id):
+        log_security_event('access.petition_action_forbidden', severity='warning', petition_id=petition_id)
+        flash('You do not have access to this petition.', 'danger')
+        return redirect(url_for('petitions_list'))
+
     action = (request.form.get('action') or '').strip()
     comments = request.form.get('comments', '').strip()
     user_id = session['user_id']
     user_role = session['user_role']
+    try:
+        petition_for_guard = models.get_petition_by_id(petition_id)
+    except Exception:
+        petition_for_guard = None
+    pending_inspector_conversion_request = False
+    if petition_for_guard and petition_for_guard.get('status') == 'enquiry_report_submitted' and (petition_for_guard.get('enquiry_type') or '').strip().lower() == 'preliminary':
+        try:
+            pending_inspector_conversion_request = _has_pending_inspector_detailed_request(models.get_petition_tracking(petition_id))
+        except Exception:
+            pending_inspector_conversion_request = False
     
     try:
         form_cfg = get_effective_form_field_configs()
@@ -2391,6 +2790,11 @@ def petition_action(petition_id):
         if not action:
             flash('Invalid action request.', 'warning')
             return redirect(url_for('petition_view', petition_id=petition_id))
+
+        if pending_inspector_conversion_request and user_role in ('super_admin', 'cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+            if action in {'cvo_comments', 'cvo_send_back_reenquiry', 'cvo_direct_lodge'}:
+                flash('Inspector requested detailed conversion. Please use "Request Detailed Enquiry" action only.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
 
         if action == 'forward_to_cvo':
             if user_role not in ('super_admin', 'data_entry'):
@@ -2475,7 +2879,7 @@ def petition_action(petition_id):
                     try:
                         models.cvo_mark_direct_enquiry(petition_id, user_id, comments, enquiry_type_decision)
                         models.assign_to_inspector(
-                            petition_id, user_id, inspector_id, comments, None, memo_filename
+                            petition_id, user_id, inspector_id, comments, enquiry_type_decision, memo_filename
                         )
                     except Exception:
                         if memo_filename:
@@ -2525,13 +2929,23 @@ def petition_action(petition_id):
             organization = (request.form.get('organization') or '').strip().lower()
             enquiry_type_decision = (request.form.get('enquiry_type_decision') or '').strip()
             efile_no_input = request.form.get('efile_no', '').strip()
+            conversion_permission_stage = False
+            try:
+                conversion_permission_stage = _is_conversion_permission_stage(
+                    petition,
+                    models.get_petition_tracking(petition_id)
+                )
+            except Exception:
+                conversion_permission_stage = False
             if target_cvo not in VALID_TARGET_CVO:
                 flash('Please select a valid target CVO/DSP.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             if petition.get('received_at') == 'jmd_office' and organization not in VALID_ORGANIZATIONS:
                 flash('Please select organization (APTRANSCO/APGENCO).', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
-            if enquiry_type_decision not in VALID_ENQUIRY_TYPES:
+            if conversion_permission_stage:
+                enquiry_type_decision = 'detailed'
+            elif enquiry_type_decision not in VALID_ENQUIRY_TYPES:
                 flash('Please select enquiry type decision (Detailed/Preliminary).', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             efile_no, efile_error = resolve_efile_no_for_action(
@@ -2578,7 +2992,31 @@ def petition_action(petition_id):
             if not inspector_id:
                 flash('Please select a valid field inspector.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
-            enquiry_type_decision = None
+            conversion_reassignment_locked = False
+            try:
+                conversion_reassignment_locked = (
+                    petition is not None
+                    and petition.get('status') == 'permission_approved'
+                    and _has_conversion_request_history(models.get_petition_tracking(petition_id))
+                    and bool(petition.get('assigned_inspector_id'))
+                )
+            except Exception:
+                conversion_reassignment_locked = False
+            if conversion_reassignment_locked:
+                locked_inspector_id = int(petition.get('assigned_inspector_id') or 0)
+                if not locked_inspector_id:
+                    flash('Conversion workflow requires previously assigned inspector.', 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+                if int(inspector_id) != locked_inspector_id:
+                    flash('For preliminary-to-detailed conversion, only previously assigned inspector is allowed.', 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+            enquiry_type_decision = (request.form.get('enquiry_type_decision') or '').strip().lower() or None
+            if petition and not petition.get('requires_permission'):
+                if enquiry_type_decision not in VALID_ENQUIRY_TYPES:
+                    flash('Please select enquiry type decision (Detailed/Preliminary).', 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+            else:
+                enquiry_type_decision = None
             memo_file = request.files.get('assignment_memo_file')
             memo_filename = None
             if memo_file and memo_file.filename:
@@ -2625,7 +3063,11 @@ def petition_action(petition_id):
             )
             report_text = request.form.get('report_text', '').strip()
             recommendation = request.form.get('recommendation', '').strip()
-            request_detailed_permission = (request.form.get('request_detailed_permission') or '').strip() == '1'
+            report_next_step = (request.form.get('report_next_step') or '').strip().lower()
+            if report_next_step not in ('send_to_cvo', 'ask_detailed_permission'):
+                # Backward compatible path for older checkbox payloads.
+                report_next_step = 'ask_detailed_permission' if (request.form.get('request_detailed_permission') or '').strip() == '1' else 'send_to_cvo'
+            request_detailed_permission = report_next_step == 'ask_detailed_permission'
             detailed_request_reason = (request.form.get('detailed_request_reason') or '').strip()
             accident_type = None
             deceased_category = None
@@ -2634,7 +3076,7 @@ def petition_action(petition_id):
             deceased_count = None
             general_public_count = None
             animals_count = None
-            if (petition.get('petition_type') or '').strip() == 'electrical_accident':
+            if not request_detailed_permission and (petition.get('petition_type') or '').strip() == 'electrical_accident':
                 accident_type = (request.form.get('accident_type') or '').strip()
                 deceased_category = (request.form.get('deceased_category') or '').strip()
                 departmental_type = (request.form.get('departmental_type') or '').strip()
@@ -2685,18 +3127,6 @@ def petition_action(petition_id):
                     if animals_count <= 0:
                         flash('Please enter valid No. of Animals (greater than 0).', 'warning')
                         return redirect(url_for('petition_view', petition_id=petition_id))
-            if cfg_report_text.get('required') and not report_text:
-                flash(f"{cfg_report_text.get('label', 'Conclusion of enquiry report')} is required.", 'warning')
-                return redirect(url_for('petition_view', petition_id=petition_id))
-            if len(report_text) > 20000:
-                flash('Conclusion of enquiry report is too long.', 'warning')
-                return redirect(url_for('petition_view', petition_id=petition_id))
-            if cfg_recommendation.get('required') and not recommendation:
-                flash(f"{cfg_recommendation.get('label', 'Recommendations/Suggestions')} are required.", 'warning')
-                return redirect(url_for('petition_view', petition_id=petition_id))
-            if len(recommendation) > 5000:
-                flash('Recommendations/Suggestions text is too long.', 'warning')
-                return redirect(url_for('petition_view', petition_id=petition_id))
             if request_detailed_permission:
                 if (petition.get('enquiry_type') or '').strip().lower() != 'preliminary':
                     flash('Detailed enquiry conversion request is allowed only for preliminary enquiry petitions.', 'warning')
@@ -2707,14 +3137,32 @@ def petition_action(petition_id):
                 if len(detailed_request_reason) > 2000:
                     flash(f"{cfg_detailed_reason.get('label', 'Reason for Detailed Enquiry Request')} is too long.", 'warning')
                     return redirect(url_for('petition_view', petition_id=petition_id))
+            else:
+                if cfg_report_text.get('required') and not report_text:
+                    flash(f"{cfg_report_text.get('label', 'Conclusion of enquiry report')} is required.", 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+                if len(report_text) > 20000:
+                    flash('Conclusion of enquiry report is too long.', 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+                if cfg_recommendation.get('required') and not recommendation:
+                    flash(f"{cfg_recommendation.get('label', 'Recommendations/Suggestions')} are required.", 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+                if len(recommendation) > 5000:
+                    flash('Recommendations/Suggestions text is too long.', 'warning')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
             report_file = request.files.get('report_file')
-            if cfg_report_file.get('required') and (not report_file or not report_file.filename):
+            if (not request_detailed_permission) and cfg_report_file.get('required') and (not report_file or not report_file.filename):
                 flash('Enquiry report file (PDF) is compulsory.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
+            if request_detailed_permission:
+                report_file = None
             if not report_file or not report_file.filename:
                 report_filename = None
+                stored_report_text = report_text
+                if request_detailed_permission and not stored_report_text:
+                    stored_report_text = 'Inspector requested permission to convert preliminary enquiry to detailed enquiry.'
                 models.submit_enquiry_report(
-                    petition_id, user_id, report_text, '', recommendation, report_filename,
+                    petition_id, user_id, stored_report_text, '', recommendation if not request_detailed_permission else '', report_filename,
                     request_detailed_permission=request_detailed_permission,
                     detailed_request_reason=detailed_request_reason,
                     accident_type=accident_type,
@@ -2727,7 +3175,7 @@ def petition_action(petition_id):
                 )
                 if request_detailed_permission:
                     flash(
-                        f'Enquiry report uploaded and "{cfg_request_detailed.get("label", "Detailed enquiry conversion request")}" sent to CVO/DSP.',
+                        f'"{cfg_request_detailed.get("label", "Detailed enquiry conversion request")}" sent to CVO/DSP.',
                         'success'
                     )
                 else:
@@ -2741,8 +3189,11 @@ def petition_action(petition_id):
             os.makedirs(ENQUIRY_UPLOAD_DIR, exist_ok=True)
             report_filename = f"enquiry_{petition_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{original_name}"
             report_file.save(os.path.join(ENQUIRY_UPLOAD_DIR, report_filename))
+            stored_report_text = report_text
+            if request_detailed_permission and not stored_report_text:
+                stored_report_text = 'Inspector requested permission to convert preliminary enquiry to detailed enquiry.'
             models.submit_enquiry_report(
-                petition_id, user_id, report_text, '', recommendation, report_filename,
+                petition_id, user_id, stored_report_text, '', recommendation if not request_detailed_permission else '', report_filename,
                 request_detailed_permission=request_detailed_permission,
                 detailed_request_reason=detailed_request_reason,
                 accident_type=accident_type,
@@ -2755,7 +3206,7 @@ def petition_action(petition_id):
             )
             if request_detailed_permission:
                 flash(
-                    f'Enquiry report uploaded and "{cfg_request_detailed.get("label", "Detailed enquiry conversion request")}" sent to CVO/DSP.',
+                    f'"{cfg_request_detailed.get("label", "Detailed enquiry conversion request")}" sent to CVO/DSP.',
                     'success'
                 )
             else:
@@ -2855,7 +3306,26 @@ def petition_action(petition_id):
             if not cvo_comments:
                 flash('Remarks are required to request detailed enquiry.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
-            models.cvo_request_detailed_enquiry(petition_id, user_id, cvo_comments)
+            prima_facie_file = request.files.get('prima_facie_file')
+            prima_facie_filename = None
+            if prima_facie_file and prima_facie_file.filename:
+                ok, upload_result = validate_pdf_upload(prima_facie_file, 'Prima Facie document')
+                if not ok:
+                    flash(upload_result, 'danger')
+                    return redirect(url_for('petition_view', petition_id=petition_id))
+                original_name = upload_result
+                os.makedirs(ENQUIRY_UPLOAD_DIR, exist_ok=True)
+                prima_facie_filename = f"cvo_prima_facie_{petition_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{original_name}"
+                prima_facie_file.save(os.path.join(ENQUIRY_UPLOAD_DIR, prima_facie_filename))
+            try:
+                models.cvo_request_detailed_enquiry(petition_id, user_id, cvo_comments, prima_facie_filename)
+            except Exception:
+                if prima_facie_filename:
+                    try:
+                        os.remove(os.path.join(ENQUIRY_UPLOAD_DIR, prima_facie_filename))
+                    except Exception:
+                        pass
+                raise
             flash('Detailed enquiry requested. Workflow restarted at PO permission stage.', 'success')
             
         elif action == 'give_conclusion':
@@ -3092,25 +3562,50 @@ def petition_action(petition_id):
         else:
             flash('Unsupported action.', 'warning')
             
-    except Exception as e:
-        flash(f'Error: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to complete action. Please contact administrator.')
     
     return redirect(url_for('petition_view', petition_id=petition_id))
 
 @app.route('/e-receipts/<path:filename>')
 @login_required
 def ereceipt_file(filename):
+    filename = secure_filename(filename or '')
+    if not filename:
+        return Response(status=404)
+    petition_id = _petition_id_from_filename(filename)
+    if petition_id and not _can_access_petition(petition_id):
+        log_security_event('access.file_forbidden', severity='warning', petition_id=petition_id, file_type='e_receipt')
+        flash('You do not have access to this file.', 'danger')
+        return redirect(url_for('petitions_list'))
     return send_from_directory(ERECEIPT_UPLOAD_DIR, filename, as_attachment=False)
 
 @app.route('/enquiry-files/<path:filename>')
 @login_required
 def enquiry_file(filename):
+    filename = secure_filename(filename or '')
+    if not filename:
+        return Response(status=404)
+    petition_id = _petition_id_from_filename(filename)
+    if petition_id and not _can_access_petition(petition_id):
+        log_security_event('access.file_forbidden', severity='warning', petition_id=petition_id, file_type='enquiry')
+        flash('You do not have access to this file.', 'danger')
+        return redirect(url_for('petitions_list'))
     return send_from_directory(ENQUIRY_UPLOAD_DIR, filename, as_attachment=False)
 
 
 @app.route('/profile-photos/<path:filename>')
 @login_required
 def profile_photo_file(filename):
+    filename = secure_filename(filename or '')
+    if not filename:
+        return Response(status=404)
+    owner_match = re.match(r'^user_(\d+)_', filename)
+    if owner_match:
+        owner_id = int(owner_match.group(1))
+        if session.get('user_role') != 'super_admin' and owner_id != int(session.get('user_id') or 0):
+            log_security_event('access.profile_photo_forbidden', severity='warning', owner_id=owner_id)
+            return Response(status=403)
     return send_from_directory(PROFILE_UPLOAD_DIR, filename, as_attachment=False)
 
 
@@ -3149,8 +3644,9 @@ def profile():
             return redirect(url_for('profile'))
 
         if new_password:
-            if len(new_password) < 6:
-                flash('New password must be at least 6 characters.', 'warning')
+            ok_password, password_error = validate_password_strength(new_password, 'New password')
+            if not ok_password:
+                flash(password_error, 'warning')
                 return redirect(url_for('profile'))
             if new_password != confirm_password:
                 flash('Password confirmation does not match.', 'warning')
@@ -3194,7 +3690,7 @@ def profile():
             if 'unique' in error_text or 'duplicate key' in error_text:
                 flash('Username already exists. Choose a different username.', 'danger')
             else:
-                flash(f'Unable to update profile: {str(e)}', 'danger')
+                flash_internal_error('Unable to update profile. Please contact administrator.')
             return redirect(url_for('profile'))
 
     return render_template('profile.html', user=user)
@@ -3237,8 +3733,8 @@ def approve_signup_request(request_id):
     try:
         models.approve_signup_request(request_id, session['user_id'])
         flash('Signup request approved and user created.', 'success')
-    except Exception as e:
-        flash(f'Unable to approve signup request: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to approve signup request. Please contact administrator.')
     return redirect(url_for('users_list'))
 
 
@@ -3250,8 +3746,8 @@ def reject_signup_request(request_id):
     try:
         models.reject_signup_request(request_id, session['user_id'], note)
         flash('Signup request rejected.', 'success')
-    except Exception as e:
-        flash(f'Unable to reject signup request: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to reject signup request. Please contact administrator.')
     return redirect(url_for('users_list'))
 
 
@@ -3262,8 +3758,8 @@ def approve_password_reset_request(request_id):
     try:
         models.approve_password_reset_request(request_id, session['user_id'])
         flash('Password reset request approved.', 'success')
-    except Exception as e:
-        flash(f'Unable to approve password reset request: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to approve password reset request. Please contact administrator.')
     return redirect(url_for('users_list'))
 
 
@@ -3275,8 +3771,8 @@ def reject_password_reset_request(request_id):
     try:
         models.reject_password_reset_request(request_id, session['user_id'], note)
         flash('Password reset request rejected.', 'success')
-    except Exception as e:
-        flash(f'Unable to reject password reset request: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to reject password reset request. Please contact administrator.')
     return redirect(url_for('users_list'))
 
 
@@ -3319,8 +3815,8 @@ def form_management():
                     updated_by=session['user_id']
                 )
                 flash('New form field added successfully.', 'success')
-            except Exception as e:
-                flash(f'Unable to add form field: {str(e)}', 'danger')
+            except Exception:
+                flash_internal_error('Unable to add form field. Please contact administrator.')
             return redirect(url_for('form_management'))
 
         form_key = (request.form.get('form_key') or '').strip()
@@ -3363,8 +3859,8 @@ def form_management():
                 form_key, field_key, label, field_type, is_required, options, session['user_id']
             )
             flash('Form field updated successfully.', 'success')
-        except Exception as e:
-            flash(f'Unable to update form field: {str(e)}', 'danger')
+        except Exception:
+            flash_internal_error('Unable to update form field. Please contact administrator.')
         return redirect(url_for('form_management'))
 
     effective = get_effective_form_field_configs()
@@ -3399,8 +3895,9 @@ def user_create():
         if not username or len(username) < 3:
             flash('Username must be at least 3 characters.', 'warning')
             return redirect(url_for('users_list'))
-        if not password or len(password) < 6:
-            flash('Password must be at least 6 characters.', 'warning')
+        ok_password, password_error = validate_password_strength(password, 'Password')
+        if not password or not ok_password:
+            flash(password_error or 'Password is required.', 'warning')
             return redirect(url_for('users_list'))
         if not full_name or len(full_name) < 3:
             flash('Officer name must be at least 3 characters.', 'warning')
@@ -3447,8 +3944,8 @@ def user_create():
         
         models.create_user(username, password, full_name, role, cvo_office, assigned_cvo_id, phone, email)
         flash(f'User {username} created successfully!', 'success')
-    except Exception as e:
-        flash(f'Error creating user: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to create user. Please contact administrator.')
     
     return redirect(url_for('users_list'))
 
@@ -3503,8 +4000,9 @@ def users_upload():
                     data[col] = str(value).strip() if value is not None else ''
                 if any(v for v in data.values()):
                     rows.append(data)
-    except Exception as e:
-        flash(f'Unable to parse upload file: {str(e)}', 'danger')
+    except Exception:
+        app.logger.exception('Unable to parse users bulk upload file')
+        flash('Unable to parse upload file. Please verify format and retry.', 'danger')
         return redirect(url_for('users_list'))
 
     created = 0
@@ -3536,9 +4034,10 @@ def users_upload():
             failed += 1
             errors.append(f'Row {i}: username must be at least 3 characters.')
             continue
-        if len(password) < 6:
+        ok_password, password_error = validate_password_strength(password, 'Password')
+        if not ok_password:
             failed += 1
-            errors.append(f'Row {i}: password must be at least 6 characters.')
+            errors.append(f'Row {i}: {password_error}')
             continue
         if len(full_name) < 3:
             failed += 1
@@ -3581,9 +4080,10 @@ def users_upload():
         try:
             models.create_user(username, password, full_name, role, cvo_office, assigned_cvo_id, phone, email)
             created += 1
-        except Exception as e:
+        except Exception:
             failed += 1
-            errors.append(f'Row {i}: {str(e)}')
+            app.logger.exception('Bulk user row failed at row %s', i)
+            errors.append(f'Row {i}: internal processing error.')
 
     if created:
         flash(f'Bulk user upload complete. Created: {created}, Failed: {failed}.', 'success')
@@ -3602,8 +4102,8 @@ def user_toggle(user_id):
     try:
         models.toggle_user_status(user_id)
         flash('User status updated.', 'success')
-    except Exception as e:
-        flash(f'Error: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to update user status. Please contact administrator.')
     return redirect(url_for('users_list'))
 
 @app.route('/users/<int:user_id>/edit', methods=['POST'])
@@ -3628,9 +4128,11 @@ def user_edit(user_id):
         if cvo_office and cvo_office not in VALID_CVO_OFFICES:
             flash('Please select a valid office.', 'warning')
             return redirect(url_for('users_list'))
-        if password and len(password) < 6:
-            flash('Password must be at least 6 characters.', 'warning')
-            return redirect(url_for('users_list'))
+        if password:
+            ok_password, password_error = validate_password_strength(password, 'Password')
+            if not ok_password:
+                flash(password_error, 'warning')
+                return redirect(url_for('users_list'))
         if not validate_contact(phone):
             flash('Please provide a valid phone number.', 'warning')
             return redirect(url_for('users_list'))
@@ -3665,8 +4167,8 @@ def user_edit(user_id):
         
         models.update_user(user_id, full_name, role, cvo_office, assigned_cvo_id, phone, email, password)
         flash('User updated successfully!', 'success')
-    except Exception as e:
-        flash(f'Error: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to update user. Please contact administrator.')
     
     return redirect(url_for('users_list'))
 
@@ -3676,14 +4178,15 @@ def user_edit(user_id):
 def user_reset_password(user_id):
     try:
         new_password = request.form.get('new_password', '').strip()
-        if len(new_password) < 6:
-            flash('Password must be at least 6 characters.', 'warning')
+        ok_password, password_error = validate_password_strength(new_password, 'Password')
+        if not ok_password:
+            flash(password_error, 'warning')
             return redirect(url_for('users_list'))
         
         models.set_user_password(user_id, new_password)
         flash('Password reset successfully.', 'success')
-    except Exception as e:
-        flash(f'Error resetting password: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to reset password. Please contact administrator.')
     
     return redirect(url_for('users_list'))
 
@@ -3711,7 +4214,7 @@ def user_reset_username(user_id):
         if 'unique' in error_text or 'duplicate key' in error_text:
             flash('Username already exists. Choose a different username.', 'danger')
         else:
-            flash(f'Error updating username: {str(e)}', 'danger')
+            flash_internal_error('Unable to update username. Please contact administrator.')
     
     return redirect(url_for('users_list'))
 
@@ -3728,8 +4231,8 @@ def user_update_name(user_id):
 
         models.update_user_full_name(user_id, full_name)
         flash('Officer name updated successfully.', 'success')
-    except Exception as e:
-        flash(f'Error updating officer name: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to update officer name. Please contact administrator.')
 
     return redirect(url_for('users_list'))
 
@@ -3785,12 +4288,12 @@ def user_update_contact(user_id):
             if session.get('user_id') == user_id:
                 refresh_session_user()
             flash('User contact/profile photo updated.', 'success')
-        except Exception as e:
+        except Exception:
             if stored_photo_name:
                 delete_profile_photo_file(stored_photo_name)
-            flash(f'Error updating contact/photo: {str(e)}', 'danger')
-    except Exception as e:
-        flash(f'Error updating contact/photo: {str(e)}', 'danger')
+            flash_internal_error('Unable to update contact/photo. Please contact administrator.')
+    except Exception:
+        flash_internal_error('Unable to update contact/photo. Please contact administrator.')
 
     return redirect(url_for('users_list'))
 
@@ -3816,8 +4319,8 @@ def user_map_cvo(inspector_id):
 
         models.map_inspector_to_cvo(inspector_id, cvo_id)
         flash('Field inspector mapped to CVO/DSP successfully.', 'success')
-    except Exception as e:
-        flash(f'Error mapping inspector: {str(e)}', 'danger')
+    except Exception:
+        flash_internal_error('Unable to map inspector. Please contact administrator.')
 
     return redirect(url_for('users_list'))
 
@@ -3828,6 +4331,9 @@ def user_map_cvo(inspector_id):
 @app.route('/api/inspectors/<int:cvo_id>')
 @login_required
 def api_inspectors(cvo_id):
+    if not _can_access_cvo_scope(cvo_id):
+        log_security_event('access.api_inspectors_forbidden', severity='warning', cvo_id=cvo_id)
+        return jsonify({'error': 'Forbidden'}), 403
     inspectors = models.get_inspectors_by_cvo(cvo_id)
     return jsonify([{'id': i['id'], 'full_name': i['full_name']} for i in inspectors])
 

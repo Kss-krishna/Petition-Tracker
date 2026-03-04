@@ -74,6 +74,10 @@ class Config:
         self.UPLOAD_BASE_DIR = str(resolved_storage_path)
         self.MAX_UPLOAD_SIZE_MB = int(os.environ.get('MAX_UPLOAD_SIZE_MB', '10'))
         self.SESSION_COOKIE_SECURE = self.IS_PRODUCTION
+        self.SESSION_LIFETIME_MINUTES = int(os.environ.get('SESSION_LIFETIME_MINUTES', '120'))
+        self.LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('LOGIN_RATE_LIMIT_WINDOW_SECONDS', '600'))
+        self.LOGIN_RATE_LIMIT_MAX_ATTEMPTS = int(os.environ.get('LOGIN_RATE_LIMIT_MAX_ATTEMPTS', '8'))
+        self.LOGIN_RATE_LIMIT_BLOCK_SECONDS = int(os.environ.get('LOGIN_RATE_LIMIT_BLOCK_SECONDS', '900'))
 
         if self.IS_PRODUCTION:
             self._validate_production_settings()

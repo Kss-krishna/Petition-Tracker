@@ -1554,7 +1554,7 @@ def po_send_back_to_cvo_for_reenquiry(petition_id, po_user_id, comments):
     finally:
         conn.close()
 
-def cvo_request_detailed_enquiry(petition_id, cvo_user_id, cvo_comments=None):
+def cvo_request_detailed_enquiry(petition_id, cvo_user_id, cvo_comments=None, attachment_file=None):
     """After preliminary report, CVO requests PO permission to continue as detailed enquiry."""
     conn = get_db()
     try:
@@ -1587,11 +1587,11 @@ def cvo_request_detailed_enquiry(petition_id, cvo_user_id, cvo_comments=None):
 
         cur.execute("""
             INSERT INTO petition_tracking (petition_id, from_user_id, to_user_id, from_role, to_role,
-                action, comments, status_before, status_after)
+                action, comments, status_before, status_after, attachment_file)
             VALUES (%s, %s, %s, (SELECT role FROM users WHERE id = %s), 'po',
                 'Preliminary Enquiry Completed - Requested PO Permission for Detailed Enquiry',
-                %s, %s, 'sent_for_permission')
-        """, (petition_id, cvo_user_id, po_id, cvo_user_id, cvo_comments, status_before))
+                %s, %s, 'sent_for_permission', %s)
+        """, (petition_id, cvo_user_id, po_id, cvo_user_id, cvo_comments, status_before, attachment_file))
 
         conn.commit()
     except Exception as e:
