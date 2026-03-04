@@ -1228,11 +1228,13 @@ body {
 
 .petitions-table-wrap {
     padding: 0 14px 14px;
-    overflow-x: auto;
+    overflow-x: hidden;
 }
 
 .petitions-page-card .data-table {
-    min-width: 1040px;
+    min-width: 0;
+    width: 100%;
+    table-layout: fixed;
     border-collapse: separate;
     border-spacing: 0;
     background: #ffffff;

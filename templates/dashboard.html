@@ -187,7 +187,7 @@
                     <span class="l">Beyond SLA</span>
                 </div>
             </div>
-            <a href="{{ url_for('sla_dashboard') }}" class="btn btn-sm btn-primary">Open SLA Dashboard</a>
+            <a href="{{ url_for('sla_dashboard') }}" class="btn btn-sm btn-primary" data-i18n="common.open_sla_dashboard">Open SLA Dashboard</a>
         </div>
     </div>
 
@@ -271,20 +271,20 @@
 
     <div class="card recent-panel">
         <div class="card-header">
-            <h2>Recent Petitions</h2>
-            <a href="{{ url_for('petitions_list') }}" class="btn btn-sm btn-outline">View All</a>
+            <h2 data-i18n="dash.recent_petitions">Recent Petitions</h2>
+            <a href="{{ url_for('petitions_list') }}" class="btn btn-sm btn-outline" data-i18n="dash.view_all">View All</a>
         </div>
         <div class="table-wrapper">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>S.No</th>
-                        <th>E-Office File No</th>
-                        <th>Petitioner</th>
-                        <th>Subject</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th>Date</th>
+                        <th data-i18n="table.sno">S.No</th>
+                        <th data-i18n="table.eoffice">E-Office File No</th>
+                        <th data-i18n="table.petitioner">Petitioner</th>
+                        <th data-i18n="table.subject">Subject</th>
+                        <th data-i18n="table.type">Type</th>
+                        <th data-i18n="table.status">Status</th>
+                        <th data-i18n="table.date">Date</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -304,11 +304,11 @@
                         <td><span class="badge badge-type">{{ petition_types.get(p.petition_type, p.petition_type) }}</span></td>
                         <td><span class="status-badge" style="--status-color: {{ status_colors.get(p.status, '#6b7280') }}">{{ status_labels.get(p.status, p.status) }}</span></td>
                         <td>{{ p.received_date.strftime('%d/%m/%Y') if p.received_date else '-' }}</td>
-                        <td><a href="{{ url_for('petition_view', petition_id=p.id) }}" class="btn btn-xs btn-outline">View</a></td>
+                        <td><a href="{{ url_for('petition_view', petition_id=p.id) }}" class="btn btn-xs btn-outline" data-i18n="common.view">View</a></td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="empty-state">No petitions found</td>
+                        <td colspan="8" class="empty-state" data-i18n="common.no_petitions_found">No petitions found</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -327,7 +327,7 @@
                     <input type="hidden" name="target_cvo" value="{{ dashboard_filter.target_cvo if dashboard_filter else 'all' }}">
                     <input type="hidden" name="officer_id" value="{{ dashboard_filter.officer_id if dashboard_filter else 'all' }}">
                     <input type="hidden" name="page" value="1">
-                    <label for="dashboardPageSize">Rows</label>
+                    <label for="dashboardPageSize" data-i18n="common.rows">Rows</label>
                     {% set _ps = (dashboard_filter.page_size if dashboard_filter and dashboard_filter.page_size else 20) %}
                     <select id="dashboardPageSize" class="filter-select dashboard-page-size-select" name="page_size" onchange="this.form.submit()">
                         <option value="10" {% if _ps == 10 %}selected{% endif %}>10</option>
@@ -347,7 +347,7 @@
                     officer_id=(dashboard_filter.officer_id if dashboard_filter else 'all'),
                     page_size=(dashboard_filter.page_size if dashboard_filter else 20),
                     page=1
-                ) }}">First</a>
+                ) }}" data-i18n="common.first">First</a>
                 <a class="btn btn-xs btn-outline {% if dashboard_pagination.page <= 1 %}disabled{% endif %}" href="{{ url_for('dashboard',
                     from_date=(dashboard_filter.from_date if dashboard_filter else ''),
                     to_date=(dashboard_filter.to_date if dashboard_filter else ''),
@@ -358,8 +358,8 @@
                     officer_id=(dashboard_filter.officer_id if dashboard_filter else 'all'),
                     page_size=(dashboard_filter.page_size if dashboard_filter else 20),
                     page=(dashboard_pagination.page - 1 if dashboard_pagination.page > 1 else 1)
-                ) }}">Prev</a>
-                <span class="dashboard-pagination-page">Page {{ dashboard_pagination.page }} / {{ dashboard_pagination.total_pages }}</span>
+                ) }}" data-i18n="common.prev">Prev</a>
+                <span class="dashboard-pagination-page"><span data-i18n="common.page">Page</span> {{ dashboard_pagination.page }} / {{ dashboard_pagination.total_pages }}</span>
                 <a class="btn btn-xs btn-outline dashboard-page-edge {% if dashboard_pagination.page >= dashboard_pagination.total_pages %}disabled{% endif %}" href="{{ url_for('dashboard',
                     from_date=(dashboard_filter.from_date if dashboard_filter else ''),
                     to_date=(dashboard_filter.to_date if dashboard_filter else ''),
@@ -370,7 +370,7 @@
                     officer_id=(dashboard_filter.officer_id if dashboard_filter else 'all'),
                     page_size=(dashboard_filter.page_size if dashboard_filter else 20),
                     page=(dashboard_pagination.page + 1 if dashboard_pagination.page < dashboard_pagination.total_pages else dashboard_pagination.total_pages)
-                ) }}">Next</a>
+                ) }}" data-i18n="common.next">Next</a>
                 <a class="btn btn-xs btn-outline {% if dashboard_pagination.page >= dashboard_pagination.total_pages %}disabled{% endif %}" href="{{ url_for('dashboard',
                     from_date=(dashboard_filter.from_date if dashboard_filter else ''),
                     to_date=(dashboard_filter.to_date if dashboard_filter else ''),
@@ -381,7 +381,7 @@
                     officer_id=(dashboard_filter.officer_id if dashboard_filter else 'all'),
                     page_size=(dashboard_filter.page_size if dashboard_filter else 20),
                     page=dashboard_pagination.total_pages
-                ) }}">Last</a>
+                ) }}" data-i18n="common.last">Last</a>
                 </div>
             </div>
         </div>
@@ -393,31 +393,31 @@
     <div class="dash-modal-backdrop" onclick="closeDashboardDrilldown()"></div>
     <div class="dash-modal-panel">
         <div class="card-header">
-            <h2 id="dashModalTitle">Dashboard Drilldown</h2>
-            <button class="btn btn-xs btn-outline" onclick="closeDashboardDrilldown()">Close</button>
+            <h2 id="dashModalTitle" data-i18n="dash.drilldown_title">Dashboard Drilldown</h2>
+            <button class="btn btn-xs btn-outline" onclick="closeDashboardDrilldown()" data-i18n="common.close">Close</button>
         </div>
         <div class="table-wrapper">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>S.No</th>
-                        <th>Petitioner</th>
-                        <th>Subject</th>
-                        <th>Status</th>
-                        <th>Accident Details</th>
-                        <th>Date</th>
+                        <th data-i18n="table.sno">S.No</th>
+                        <th data-i18n="table.petitioner">Petitioner</th>
+                        <th data-i18n="table.subject">Subject</th>
+                        <th data-i18n="table.status">Status</th>
+                        <th data-i18n="table.accident_details">Accident Details</th>
+                        <th data-i18n="table.date">Date</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody id="dashModalBody">
-                    <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+                    <tr><td colspan="7" class="empty-state" data-i18n="common.loading">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
         <div id="dashRowDetail" class="dash-row-detail" style="display:none;">
             <div class="dash-row-detail-head">
-                <h3>Petition Detail Snapshot</h3>
-                <button class="btn btn-xs btn-outline" type="button" onclick="hideDashboardRowDetail()">Hide</button>
+                <h3 data-i18n="dash.snapshot_title">Petition Detail Snapshot</h3>
+                <button class="btn btn-xs btn-outline" type="button" onclick="hideDashboardRowDetail()" data-i18n="dash.hide">Hide</button>
             </div>
             <div id="dashRowDetailBody" class="dash-row-detail-body"></div>
         </div>

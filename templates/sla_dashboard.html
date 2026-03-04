@@ -345,16 +345,16 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
 <div class="sla-chart-grid">
     <div class="card">
         <div class="card-header">
-            <h3>Today</h3>
+            <h3 data-i18n="sla.today">Today</h3>
         </div>
         <div class="sla-analytics-strip">
             <div class="sla-mini">
-                <div class="h">Assigned Today</div>
+                <div class="h" data-i18n="sla.assigned_today">Assigned Today</div>
                 <div class="v" id="slaTodayAssigned">0</div>
                 <div class="s" id="slaTodayOpen">Open: 0</div>
             </div>
             <div class="sla-mini">
-                <div class="h">This Month</div>
+                <div class="h" data-i18n="sla.this_month">This Month</div>
                 <div class="v" id="slaMonthAssigned">0</div>
                 <div class="s" id="slaMonthViolation">Beyond SLA: 0</div>
             </div>
@@ -362,7 +362,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>Employee SLA Load (Stacked)</h3>
+            <h3 data-i18n="sla.employee_load_stacked">Employee SLA Load (Stacked)</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaEmployeeStacked"></canvas>
@@ -370,7 +370,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>SLA Distribution</h3>
+            <h3 data-i18n="sla.distribution">SLA Distribution</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaOverallDonut"></canvas>
@@ -378,7 +378,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>Beyond SLA Ranking</h3>
+            <h3 data-i18n="sla.beyond_ranking">Beyond SLA Ranking</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaBeyondRanking"></canvas>
@@ -386,7 +386,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>Employee SLA Compliance %</h3>
+            <h3 data-i18n="sla.compliance_pct">Employee SLA Compliance %</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaComplianceLine"></canvas>
@@ -394,7 +394,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>SLA Violations This Month</h3>
+            <h3 data-i18n="sla.violations_month">SLA Violations This Month</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaViolationMonthly"></canvas>
@@ -402,7 +402,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>Daily Closures This Month</h3>
+            <h3 data-i18n="sla.daily_closures_month">Daily Closures This Month</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaClosureDaily"></canvas>
@@ -410,7 +410,7 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     </div>
     <div class="card sla-chart-card">
         <div class="card-header">
-            <h3>Open vs Closed Mix</h3>
+            <h3 data-i18n="sla.open_closed_mix">Open vs Closed Mix</h3>
         </div>
         <div class="sla-chart-wrap">
             <canvas id="slaOpenClosedMix"></canvas>
@@ -420,19 +420,19 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
 
 <div class="card">
     <div class="card-header">
-        <h3>Employee SLA Profile Grid</h3>
+        <h3 data-i18n="sla.employee_profile_grid">Employee SLA Profile Grid</h3>
     </div>
     <div class="sla-table-wrap">
         <table class="sla-table data-table">
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Employee</th>
-                    <th>Total</th>
-                    <th>Within SLA</th>
-                    <th>Beyond SLA</th>
-                    <th>In Progress</th>
-                    <th>Compliance %</th>
+                    <th data-i18n="table.sno">#</th>
+                    <th data-i18n="table.employee">Employee</th>
+                    <th data-i18n="petitioner.profile.kpi.total">Total</th>
+                    <th data-i18n="sla.state.within">Within SLA</th>
+                    <th data-i18n="sla.state.beyond">Beyond SLA</th>
+                    <th data-i18n="sla.state.in_progress">In Progress</th>
+                    <th data-i18n="sla.compliance_pct">Compliance %</th>
                     <th></th>
                 </tr>
             </thead>
@@ -460,11 +460,11 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
                         {% endif %}
                     </td>
                     <td>
-                        <a href="{{ url_for('sla_employee_profile', officer_id=row.officer_id) }}" class="btn btn-xs btn-outline">View Profile</a>
+                        <a href="{{ url_for('sla_employee_profile', officer_id=row.officer_id) }}" class="btn btn-xs btn-outline" data-i18n="sla.view_profile">View Profile</a>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="empty-state">No SLA employee data found.</td></tr>
+                <tr><td colspan="8" class="empty-state" data-i18n="sla.no_employee_data">No SLA employee data found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -479,25 +479,25 @@ html[data-theme='dark'] .sla-mini .s { color: #e2e8f0; }
     <div class="dash-modal-backdrop" onclick="closeSlaDrilldown()"></div>
     <div class="dash-modal-panel">
         <div class="card-header">
-            <h3 id="slaDrilldownTitle">SLA Drilldown</h3>
-            <button class="btn btn-xs btn-outline" type="button" onclick="closeSlaDrilldown()">Close</button>
+            <h3 id="slaDrilldownTitle" data-i18n="sla.drilldown_title">SLA Drilldown</h3>
+            <button class="btn btn-xs btn-outline" type="button" onclick="closeSlaDrilldown()" data-i18n="common.close">Close</button>
         </div>
         <div class="table-wrapper sla-drill-wrap">
             <table class="sla-drill-table data-table">
                 <thead>
                     <tr>
-                        <th>S.No</th>
-                        <th>Petitioner</th>
-                        <th>Subject</th>
-                        <th>Status</th>
-                        <th>SLA Target</th>
-                        <th>Elapsed</th>
-                        <th>SLA State</th>
+                        <th data-i18n="table.sno">S.No</th>
+                        <th data-i18n="table.petitioner">Petitioner</th>
+                        <th data-i18n="table.subject">Subject</th>
+                        <th data-i18n="table.status">Status</th>
+                        <th data-i18n="sla.target">SLA Target</th>
+                        <th data-i18n="sla.elapsed">Elapsed</th>
+                        <th data-i18n="sla.emp.sla_state">SLA State</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody id="slaDrilldownBody">
-                    <tr><td colspan="8" class="empty-state">No petitions found.</td></tr>
+                    <tr><td colspan="8" class="empty-state" data-i18n="common.no_petitions_found">No petitions found.</td></tr>
                 </tbody>
             </table>
         </div>

@@ -291,12 +291,12 @@
                         </span>
                     </span>
                 </h1>
-                <div class="login-nav-sub">Vigilance Portal</div>
+                <div class="login-nav-sub" data-i18n="login.vigilance_portal">Vigilance Portal</div>
             </div>
         </a>
         <div class="login-nav-links">
-            <a href="{{ url_for('index') }}#features">Features</a>
-            <a href="{{ url_for('index') }}#stats">Dashboard</a>
+            <a href="{{ url_for('index') }}#features" data-i18n="common.features">Features</a>
+            <a href="{{ url_for('index') }}#stats" data-i18n="nav.dashboard">Dashboard</a>
             <div class="lang-toggle" role="group" aria-label="Language switch">
                 <button type="button" class="lang-pill" data-lang="en">EN</button>
                 <button type="button" class="lang-pill" data-lang="te">TE</button>
@@ -309,7 +309,7 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
                 </span>
             </button>
-            <a href="{{ url_for('index') }}" class="login-btn-launch"><span>▶</span> Home</a>
+            <a href="{{ url_for('index') }}" class="login-btn-launch"><span>&#9654;</span> <span data-i18n="common.home">Home</span></a>
         </div>
     </nav>
     <div class="login-shell">
@@ -345,18 +345,18 @@
             <form method="POST" action="{{ url_for('login') }}" class="login-form" data-login-panel="secure">
                 <input type="hidden" name="login_action" value="verify_otp">
                 <div class="form-group">
-                    <label>Mobile Verification</label>
+                    <label data-i18n="login.mobile_verification">Mobile Verification</label>
                     <input type="text" value="{{ otp_mobile_masked }}" readonly>
-                    <small class="form-help">Enter OTP sent to your registered mobile number.</small>
+                    <small class="form-help" data-i18n="login.otp_help">Enter OTP sent to your registered mobile number.</small>
                 </div>
                 <div class="form-group">
-                    <label for="otp_code">OTP</label>
-                    <input type="text" id="otp_code" name="otp_code" required inputmode="numeric" pattern="[0-9]+" maxlength="10" placeholder="Enter OTP">
+                    <label for="otp_code" data-i18n="login.otp">OTP</label>
+                    <input type="text" id="otp_code" name="otp_code" required inputmode="numeric" pattern="[0-9]+" maxlength="10" placeholder="Enter OTP" data-i18n-placeholder="login.ph_otp">
                 </div>
-                <button type="submit" class="btn btn-primary btn-full login-captcha-verify">Verify OTP</button>
+                <button type="submit" class="btn btn-primary btn-full login-captcha-verify" data-i18n="login.verify_otp">Verify OTP</button>
                 <div class="form-actions" style="margin-top:8px; display:flex; gap:8px;">
-                    <button type="submit" name="login_action" value="resend_otp" class="btn btn-outline btn-full">Resend OTP</button>
-                    <a href="{{ url_for('login', reset_otp='1') }}" class="btn btn-outline btn-full">Change Login</a>
+                    <button type="submit" name="login_action" value="resend_otp" class="btn btn-outline btn-full" data-i18n="login.resend_otp">Resend OTP</button>
+                    <a href="{{ url_for('login', reset_otp='1') }}" class="btn btn-outline btn-full" data-i18n="login.change_login">Change Login</a>
                 </div>
             </form>
             {% else %}
@@ -377,7 +377,7 @@
                     <div class="login-captcha-row">
                         <div class="login-captcha-box" aria-live="polite">
                             <span class="login-captcha-text">{{ captcha_a }} + {{ captcha_b }} = ?</span>
-                            <a href="{{ url_for('login', refresh_captcha='1') }}" class="login-captcha-refresh" title="Refresh captcha" aria-label="Refresh captcha">&#8635;</a>
+                            <a href="{{ url_for('login', refresh_captcha='1') }}" class="login-captcha-refresh" title="Refresh captcha" aria-label="Refresh captcha" data-i18n-title="login.refresh_captcha" data-i18n-aria-label="login.refresh_captcha">&#8635;</a>
                         </div>
                         <input type="text" id="captcha_answer" name="captcha_answer" required inputmode="numeric" pattern="[0-9]+" placeholder="Enter the CAPTCHA answer" data-i18n-placeholder="login.ph_captcha">
                     </div>
@@ -405,24 +405,24 @@
             </form>
 
             <div class="login-footer">
-                <p>Vigilance Wing</p>
+                <p data-i18n="login.footer_wing">Vigilance Wing</p>
             </div>
         </section>
         <aside class="login-hero">
             <div class="login-hero-mark">
                 <img src="{{ url_for('static', filename=brand_logo_file) }}" alt="{{ brand_name }} Mark" class="login-hero-logo" onerror="this.onerror=null;this.src='{{ url_for('static', filename=brand_logo_fallback) }}';">
             </div>
-            <h2>Welcome to {{ brand_name }}</h2>
-            <p>Secure digital vigilance workflow for officers, enquiry tracking, and action monitoring.</p>
+            <h2><span data-i18n="login.hero.title_prefix">Welcome to</span> {{ brand_name }}</h2>
+            <p data-i18n="login.hero.subtitle">Secure digital vigilance workflow for officers, enquiry tracking, and action monitoring.</p>
             <div class="login-orbit">
                 <span class="orbit-ring orbit-ring-a"></span>
                 <span class="orbit-ring orbit-ring-b"></span>
                 <span class="orbit-core"></span>
             </div>
             <div class="login-hero-pills">
-                <span class="hero-pill">Realtime Tracking</span>
-                <span class="hero-pill">Role Based Access</span>
-                <span class="hero-pill">Secure Workflow</span>
+                <span class="hero-pill" data-i18n="login.hero.pill_realtime">Realtime Tracking</span>
+                <span class="hero-pill" data-i18n="login.hero.pill_role_based">Role Based Access</span>
+                <span class="hero-pill" data-i18n="login.hero.pill_secure">Secure Workflow</span>
             </div>
         </aside>
     </div>

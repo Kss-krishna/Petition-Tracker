@@ -1,27 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Petitions - Petition Tracker{% endblock %}
-{% block page_title %}All Petitions{% endblock %}
+{% block page_title %}<span data-i18n="nav.petitions">Petitions</span>{% endblock %}
 
 {% block content %}
 <div class="card petitions-page-card">
     <div class="card-header petitions-header">
         <div class="petitions-title-wrap">
-            <h2>Petitions List</h2>
-            <p>Track every petition with clear workflow, status, and assigned handler.</p>
+            <h2 data-i18n="petitions.list.title">Petitions List</h2>
+            <p data-i18n="petitions.list.subtitle">Track every petition with clear workflow, status, and assigned handler.</p>
         </div>
         <div class="petitions-toolbar">
             <div class="petitions-control petitions-mode-group">
-                <label>Mode:</label>
+                <label data-i18n="common.mode">Mode:</label>
                 <div class="petitions-mode-pills">
-                    <a href="{{ url_for('petitions_list', status=status_filter, mode='all') }}" class="btn btn-xs {% if enquiry_mode == 'all' %}btn-primary{% else %}btn-outline{% endif %}">All</a>
-                    <a href="{{ url_for('petitions_list', status=status_filter, mode='direct') }}" class="btn btn-xs {% if enquiry_mode == 'direct' %}btn-primary{% else %}btn-outline{% endif %}">Direct</a>
-                    <a href="{{ url_for('petitions_list', status=status_filter, mode='permission') }}" class="btn btn-xs {% if enquiry_mode == 'permission' %}btn-primary{% else %}btn-outline{% endif %}">Permission Based</a>
+                    <a href="{{ url_for('petitions_list', status=status_filter, mode='all') }}" class="btn btn-xs {% if enquiry_mode == 'all' %}btn-primary{% else %}btn-outline{% endif %}" data-i18n="common.all">All</a>
+                    <a href="{{ url_for('petitions_list', status=status_filter, mode='direct') }}" class="btn btn-xs {% if enquiry_mode == 'direct' %}btn-primary{% else %}btn-outline{% endif %}" data-i18n="common.direct">Direct</a>
+                    <a href="{{ url_for('petitions_list', status=status_filter, mode='permission') }}" class="btn btn-xs {% if enquiry_mode == 'permission' %}btn-primary{% else %}btn-outline{% endif %}" data-i18n="common.permission_based">Permission Based</a>
                 </div>
             </div>
             <div class="petitions-control petitions-filter-group">
-                <label>Filter:</label>
+                <label data-i18n="common.filter">Filter:</label>
                 <select onchange="window.location.href='{{ url_for('petitions_list') }}?mode={{ enquiry_mode }}&status='+this.value" class="filter-select">
-                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %} data-i18n="common.all_status">All Status</option>
                     <option value="received" {% if status_filter == 'received' %}selected{% endif %}>Received</option>
                     <option value="forwarded_to_cvo" {% if status_filter == 'forwarded_to_cvo' %}selected{% endif %}>Forwarded to CVO/DSP</option>
                     <option value="sent_for_permission" {% if status_filter == 'sent_for_permission' %}selected{% endif %}>Sent for Permission</option>
@@ -42,7 +42,7 @@
             {% if current_user_role in ('super_admin', 'data_entry') %}
             <a href="{{ url_for('petition_new') }}" class="btn btn-primary btn-sm petitions-create-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
-                New Petition
+                <span data-i18n="petitions.new">New Petition</span>
             </a>
             {% endif %}
         </div>
@@ -51,18 +51,18 @@
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>S.No</th>
-                    <th>E-Office File No</th>
-                    <th>Petitioner</th>
-                    <th>Place</th>
-                    <th>Subject</th>
-                    <th>Type</th>
-                    <th>Accident Details</th>
-                    <th>Received At</th>
-                    <th>Status</th>
-                    <th>Stage</th>
-                    <th>Handler</th>
-                    <th>Date</th>
+                    <th data-i18n="table.sno">S.No</th>
+                    <th data-i18n="table.eoffice">E-Office File No</th>
+                    <th data-i18n="table.petitioner">Petitioner</th>
+                    <th data-i18n="table.place">Place</th>
+                    <th data-i18n="table.subject">Subject</th>
+                    <th data-i18n="table.type">Type</th>
+                    <th data-i18n="table.accident_details">Accident Details</th>
+                    <th data-i18n="table.received_at">Received At</th>
+                    <th data-i18n="table.status">Status</th>
+                    <th data-i18n="table.stage">Stage</th>
+                    <th data-i18n="table.handler">Handler</th>
+                    <th data-i18n="table.date">Date</th>
                     <th></th>
                 </tr>
             </thead>
@@ -117,13 +117,13 @@
                     <td><span class="badge badge-office badge-stage">Stage {{ status_to_stage.get(p.status, 1) }} - {{ workflow_stage_labels.get(status_to_stage.get(p.status, 1), 'Initiation') }}</span></td>
                     <td>{{ p.handler_name or '-' }}</td>
                     <td class="font-mono">{{ p.received_date.strftime('%d/%m/%Y') if p.received_date else '-' }}</td>
-                    <td><a href="{{ url_for('petition_view', petition_id=p.id) }}" class="btn btn-xs btn-outline">View</a></td>
+                    <td><a href="{{ url_for('petition_view', petition_id=p.id) }}" class="btn btn-xs btn-outline" data-i18n="common.view">View</a></td>
                 </tr>
                 {% else %}
                 <tr>
                     <td colspan="13" class="empty-state">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-                        <p>No petitions found</p>
+                        <p data-i18n="common.no_petitions_found">No petitions found</p>
                     </td>
                 </tr>
                 {% endfor %}
@@ -131,7 +131,7 @@
         </table>
     </div>
     <div class="table-footer">
-        <span>Showing {{ petitions|length }} petition(s)</span>
+        <span><span data-i18n="common.showing">Showing</span> {{ petitions|length }} <span data-i18n="nav.petitions">petitions</span></span>
     </div>
 </div>
 {% endblock %}

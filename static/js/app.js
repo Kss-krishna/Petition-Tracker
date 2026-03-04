@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rootEl = document.documentElement;
     const viewportMobile = 768;
     const viewportTablet = 1100;
-    const i18nVersion = '20260302-2';
+    const i18nVersion = '20260304-3';
     const originalTextNodes = new WeakMap();
     const originalAttrValues = new WeakMap();
     let activeLanguage = 'en';
@@ -184,6 +184,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!key) return;
             if (Object.prototype.hasOwnProperty.call(dict, key)) {
                 el.textContent = dict[key];
+            }
+        });
+        document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-title');
+            if (!key) return;
+            if (Object.prototype.hasOwnProperty.call(dict, key)) {
+                el.setAttribute('title', dict[key]);
+            }
+        });
+        document.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
+            const key = el.getAttribute('data-i18n-aria-label');
+            if (!key) return;
+            if (Object.prototype.hasOwnProperty.call(dict, key)) {
+                el.setAttribute('aria-label', dict[key]);
             }
         });
         document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
