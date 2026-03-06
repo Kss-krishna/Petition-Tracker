@@ -6690,6 +6690,53 @@ html[data-theme='dark'] .user-action-note {
     color: #a2b3cf;
 }
 
+html[data-theme='dark'] .users-page .filter-group label {
+    color: #c2d2ed;
+}
+
+html[data-theme='dark'] .users-page input[type='search'],
+html[data-theme='dark'] .users-page .filter-select,
+html[data-theme='dark'] .users-page .users-recovery-form input,
+html[data-theme='dark'] .users-page .user-action-card input,
+html[data-theme='dark'] .users-page .user-action-card select {
+    background: linear-gradient(180deg, #132746 0%, #10203c 100%);
+    border-color: #456292;
+    color: #eef4ff;
+}
+
+html[data-theme='dark'] .users-page input[type='search']::placeholder {
+    color: #b8c9e6;
+    opacity: 1;
+}
+
+html[data-theme='dark'] .users-page .users-approval-head {
+    border-color: #3a5481;
+    background: linear-gradient(160deg, rgba(27, 47, 84, 0.92), rgba(18, 34, 62, 0.94));
+}
+
+html[data-theme='dark'] .users-page .users-approval-count {
+    border-color: rgba(106, 141, 204, 0.9);
+    background: rgba(35, 61, 109, 0.9);
+    color: #dce9ff;
+}
+
+html[data-theme='dark'] .users-page .users-recovery-item,
+html[data-theme='dark'] .users-page .user-admin-card {
+    border-color: #334f7f;
+    background: linear-gradient(180deg, rgba(16, 33, 61, 0.9), rgba(12, 24, 46, 0.94));
+}
+
+html[data-theme='dark'] .users-page .users-recovery-form,
+html[data-theme='dark'] .users-page .user-admin-actions,
+html[data-theme='dark'] .users-page .user-action-card {
+    border-color: #334f7f;
+    background: rgba(15, 31, 58, 0.9);
+}
+
+html[data-theme='dark'] .users-page .user-admin-card-inactive {
+    opacity: 0.88;
+}
+
 html[data-theme='dark'] .dashboard-filter-inline-compact {
     border-color: rgba(53, 84, 132, 0.68);
     background: linear-gradient(180deg, rgba(16, 33, 61, 0.76), rgba(12, 24, 46, 0.86));
