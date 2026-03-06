@@ -98,7 +98,25 @@
                 {% if petition.ereceipt_file %}
                 <div class="info-item">
                     <span class="info-label">E-Receipt File</span>
-                    <span class="info-value"><a href="{{ url_for('ereceipt_file', filename=petition.ereceipt_file) }}" target="_blank">View</a></span>
+                    <span class="info-value">
+                        {% if ereceipt_file_available %}
+                        <a href="{{ url_for('ereceipt_file', filename=petition.ereceipt_file, petition_id=petition.id) }}" target="_blank">View</a>
+                        {% else %}
+                        <span class="text-muted">Uploaded file unavailable</span>
+                        {% endif %}
+                    </span>
+                </div>
+                {% endif %}
+                {% if petition.conclusion_file %}
+                <div class="info-item">
+                    <span class="info-label">Conclusion File</span>
+                    <span class="info-value">
+                        {% if conclusion_file_available %}
+                        <a href="{{ url_for('enquiry_file', filename=petition.conclusion_file, petition_id=petition.id) }}" target="_blank">View</a>
+                        {% else %}
+                        <span class="text-muted">Uploaded file unavailable</span>
+                        {% endif %}
+                    </span>
                 </div>
                 {% endif %}
                 <div class="info-item">
@@ -230,7 +248,7 @@
                 {% endif %}
                 <div class="report-stage-flow-wrap">
                     <div class="report-stage-flow">
-                        <button type="button" class="report-stage-node" data-title="CI Report" data-content="{{ report.report_text|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.report_file) if report.report_file else '' }}" data-file-label="View Uploaded File" onclick="openReportStageModal(this)">
+                        <button type="button" class="report-stage-node" data-title="CI Report" data-content="{{ report.report_text|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.report_file, petition_id=petition.id) if report_file_availability.report_file else '' }}" data-file-label="View Uploaded File" onclick="openReportStageModal(this)">
                             <span class="report-stage-circle">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
                             </span>
@@ -247,7 +265,7 @@
                         {% endif %}
 
                         {% if report.cvo_comments %}
-                        <button type="button" class="report-stage-node" data-title="CVO Comments" data-content="{{ report.cvo_comments|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.cvo_consolidated_report_file) if report.cvo_consolidated_report_file else '' }}" data-file-label="View CVO Consolidated File" onclick="openReportStageModal(this)">
+                        <button type="button" class="report-stage-node" data-title="CVO Comments" data-content="{{ report.cvo_comments|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.cvo_consolidated_report_file, petition_id=petition.id) if report_file_availability.cvo_consolidated_report_file else '' }}" data-file-label="View CVO Consolidated File" onclick="openReportStageModal(this)">
                             <span class="report-stage-circle">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                             </span>
@@ -256,7 +274,7 @@
                         {% endif %}
 
                         {% if report.action_taken %}
-                        <button type="button" class="report-stage-node" data-title="CMD Action Taken Report" data-content="{{ report.action_taken|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.cmd_action_report_file) if report.cmd_action_report_file else '' }}" data-file-label="View CMD Report PDF" onclick="openReportStageModal(this)">
+                        <button type="button" class="report-stage-node" data-title="CMD Action Taken Report" data-content="{{ report.action_taken|e }}" data-file-url="{{ url_for('enquiry_file', filename=report.cmd_action_report_file, petition_id=petition.id) if report_file_availability.cmd_action_report_file else '' }}" data-file-label="View CMD Report PDF" onclick="openReportStageModal(this)">
                             <span class="report-stage-circle">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
                             </span>
@@ -905,8 +923,10 @@
                             </div>
                             {% endif %}
                         </div>
-                        {% if report.report_file %}
-                        <a href="{{ url_for('enquiry_file', filename=report.report_file) }}" target="_blank" class="btn btn-xs btn-outline">Open Previous Report PDF</a>
+                        {% if report_file_availability.report_file %}
+                        <a href="{{ url_for('enquiry_file', filename=report.report_file, petition_id=petition.id) }}" target="_blank" class="btn btn-xs btn-outline">Open Previous Report PDF</a>
+                        {% elif report.report_file %}
+                        <p class="help-text text-muted">Uploaded report file is not available on server.</p>
                         {% endif %}
                     </div>
                     {% endif %}
@@ -1135,7 +1155,11 @@
                     {% endif %}
                     {% if t.attachment_file %}
                     <p class="timeline-comment">
-                        <a href="{{ url_for('enquiry_file', filename=t.attachment_file) }}" target="_blank" class="btn btn-xs btn-outline">View Attachment</a>
+                        {% if tracking_file_availability.get(t.attachment_file) %}
+                        <a href="{{ url_for('enquiry_file', filename=t.attachment_file, petition_id=petition.id) }}" target="_blank" class="btn btn-xs btn-outline">View Attachment</a>
+                        {% else %}
+                        <span class="text-muted">Attachment not available on server</span>
+                        {% endif %}
                     </p>
                     {% endif %}
                 </div>

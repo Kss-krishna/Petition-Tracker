@@ -70,6 +70,10 @@ def ensure_schema_updates():
             ADD COLUMN IF NOT EXISTS organization VARCHAR(20)
         """)
         cur.execute("""
+            ALTER TABLE petitions
+            ADD COLUMN IF NOT EXISTS conclusion_file VARCHAR(255)
+        """)
+        cur.execute("""
             ALTER TABLE enquiry_reports
             ADD COLUMN IF NOT EXISTS cmd_action_report_file VARCHAR(255)
         """)
@@ -885,6 +889,68 @@ def get_petition_by_id(petition_id):
         return dict(result) if result else None
     finally:
         conn.close()
+
+
+def find_petition_id_by_filename(filename):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        full_name = (filename or '').strip()
+        base_name = full_name.replace('\\', '/').split('/')[-1]
+        if not full_name:
+            return None
+        cur.execute(
+            """
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND (
+                (table_name = 'petitions' AND column_name IN ('ereceipt_file', 'conclusion_file'))
+                OR (table_name = 'enquiry_reports' AND column_name IN ('report_file', 'cvo_consolidated_report_file', 'cmd_action_report_file'))
+                OR (table_name = 'petition_tracking' AND column_name IN ('attachment_file'))
+              )
+            """
+        )
+        available = {(r['table_name'], r['column_name']) for r in (cur.fetchall() or [])}
+
+        unions = []
+        params = []
+
+        petition_cols = [c for c in ('ereceipt_file', 'conclusion_file') if ('petitions', c) in available]
+        if petition_cols:
+            clause = " OR ".join([f"p.{c} = %s OR p.{c} = %s" for c in petition_cols])
+            unions.append(f"SELECT p.id AS petition_id FROM petitions p WHERE {clause}")
+            for _ in petition_cols:
+                params.extend([full_name, base_name])
+
+        report_cols = [c for c in ('report_file', 'cvo_consolidated_report_file', 'cmd_action_report_file') if ('enquiry_reports', c) in available]
+        if report_cols:
+            clause = " OR ".join([f"er.{c} = %s OR er.{c} = %s" for c in report_cols])
+            unions.append(f"SELECT er.petition_id AS petition_id FROM enquiry_reports er WHERE {clause}")
+            for _ in report_cols:
+                params.extend([full_name, base_name])
+
+        if ('petition_tracking', 'attachment_file') in available:
+            unions.append("SELECT pt.petition_id AS petition_id FROM petition_tracking pt WHERE pt.attachment_file = %s OR pt.attachment_file = %s")
+            params.extend([full_name, base_name])
+
+        if not unions:
+            return None
+
+        sql = f"""
+            SELECT petition_id
+            FROM (
+                {' UNION '.join(unions)}
+            ) matches
+            ORDER BY petition_id DESC
+            LIMIT 1
+        """
+        cur.execute(sql, tuple(params))
+        row = cur.fetchone()
+        return int(row['petition_id']) if row and row.get('petition_id') else None
+    finally:
+        conn.close()
+
 
 def get_petitions_for_user(user_id, user_role, cvo_office=None, status_filter=None, enquiry_mode='all'):
     conn = get_db()

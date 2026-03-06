@@ -58,8 +58,8 @@
 
             <div class="form-group">
                 <label for="ereceipt_file"><span data-i18n="petition.form.ereceipt_file">{{ f_ereceipt_file.label }}</span> {% if f_ereceipt_file.required %}<span class="required">*</span>{% endif %}</label>
-                <input type="file" id="ereceipt_file" name="ereceipt_file" accept=".pdf" {% if f_ereceipt_file.required %}required{% endif %}>
-                <small id="ereceipt_file_name" class="form-help" data-i18n="petition.form.no_file">No file chosen</small>
+                <input type="file" id="ereceipt_file" name="ereceipt_file" accept=".pdf" onchange="document.getElementById('ereceipt_file_name').textContent = (this.files && this.files.length) ? this.files[0].name : 'No file chosen';" {% if f_ereceipt_file.required %}required{% endif %}>
+                <small id="ereceipt_file_name" class="form-help" data-no-auto-i18n>No file chosen</small>
             </div>
 
             <div class="form-group" id="target_cvo_group">
@@ -316,8 +316,10 @@
     if (ereceiptFileInput && ereceiptFileName) {
         ereceiptFileInput.addEventListener('change', () => {
             if (ereceiptFileInput.files && ereceiptFileInput.files.length > 0) {
+                ereceiptFileName.setAttribute('data-no-auto-i18n', '');
                 ereceiptFileName.textContent = ereceiptFileInput.files[0].name;
             } else {
+                ereceiptFileName.setAttribute('data-no-auto-i18n', '');
                 ereceiptFileName.textContent = 'No file chosen';
             }
         });

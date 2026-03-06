@@ -20,7 +20,19 @@ import time
 import hmac
 import secrets
 from uuid import uuid4
-from werkzeug.exceptions import BadGateway, GatewayTimeout, InternalServerError, RequestEntityTooLarge, ServiceUnavailable
+from werkzeug.exceptions import (
+    BadGateway,
+    BadRequest,
+    Forbidden,
+    GatewayTimeout,
+    InternalServerError,
+    MethodNotAllowed,
+    NotFound,
+    RequestEntityTooLarge,
+    ServiceUnavailable,
+    TooManyRequests,
+    Unauthorized,
+)
 from werkzeug.utils import secure_filename
 try:
     from openpyxl import load_workbook
@@ -858,8 +870,60 @@ def _render_transient_error(status_code, title, message, retry_after_seconds=4, 
     return response, status_code, {'Retry-After': str(retry_after_seconds)}
 
 
+def _render_http_error(status_code, title, message):
+    if _request_prefers_json():
+        payload = {
+            'error': title,
+            'message': message,
+            'status': int(status_code),
+        }
+        response = jsonify(payload)
+        response.status_code = int(status_code)
+        return response
+    return render_template('http_error.html', status_code=int(status_code), title=title, message=message), int(status_code)
+
+
+@app.errorhandler(BadRequest)
+def handle_bad_request(_error):
+    return _render_http_error(400, 'Bad request', 'The request could not be processed. Please verify input and try again.')
+
+
+@app.errorhandler(Unauthorized)
+def handle_unauthorized(_error):
+    return _render_http_error(401, 'Authentication required', 'Please login and try again.')
+
+
+@app.errorhandler(Forbidden)
+def handle_forbidden(_error):
+    return _render_http_error(403, 'Access denied', 'You do not have permission to access this resource.')
+
+
+@app.errorhandler(NotFound)
+def handle_not_found(_error):
+    return _render_http_error(404, 'Not found', 'The requested page or resource was not found.')
+
+
+@app.errorhandler(MethodNotAllowed)
+def handle_method_not_allowed(_error):
+    return _render_http_error(405, 'Method not allowed', 'This endpoint does not support the requested method.')
+
+
+@app.errorhandler(TooManyRequests)
+def handle_too_many_requests(_error):
+    return _render_http_error(429, 'Too many requests', 'Request rate is too high. Please retry shortly.')
+
+
 @app.errorhandler(RequestEntityTooLarge)
 def handle_request_entity_too_large(_error):
+    if _request_prefers_json():
+        payload = {
+            'error': 'Payload too large',
+            'message': f'Upload exceeds {config.MAX_UPLOAD_SIZE_MB} MB limit.',
+            'status': 413,
+        }
+        response = jsonify(payload)
+        response.status_code = 413
+        return response
     flash(f'Upload exceeds {config.MAX_UPLOAD_SIZE_MB} MB limit.', 'danger')
     referer = request.headers.get('Referer')
     return redirect(referer or url_for('petitions_list'))
@@ -1130,7 +1194,13 @@ def _resolve_petition_id_for_file(filename):
     if not hasattr(models, 'find_petition_id_by_filename'):
         return None
     try:
-        return models.find_petition_id_by_filename(filename)
+        resolved = models.find_petition_id_by_filename(filename)
+        if resolved:
+            return resolved
+        base_name = (filename or '').replace('\\', '/').split('/')[-1]
+        if base_name and base_name != filename:
+            return models.find_petition_id_by_filename(base_name)
+        return None
     except Exception:
         app.logger.exception('Unable to resolve petition id for file: %s', filename)
         return None
@@ -1293,41 +1363,55 @@ def get_form_field_config(form_key, field_key):
 def _is_otp_login_enabled():
     if app.config.get('TESTING'):
         return False
-    return os.getenv('OTP_LOGIN_ENABLED', '1').strip().lower() in ('1', 'true', 'yes', 'on')
+    return os.getenv('OTP_LOGIN_ENABLED', '0').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _normalize_mobile_for_otp(phone):
     digits = re.sub(r'\D+', '', phone or '')
     if not digits:
         return ''
-    if len(digits) > 10 and digits.endswith(digits[-10:]):
-        # Prefer 10-digit local mobile format for gateway payload.
+    if len(digits) >= 12 and digits.startswith('91'):
+        return digits[:12]
+    if len(digits) == 11 and digits.startswith('0'):
+        return digits[1:]
+    if len(digits) > 10:
         return digits[-10:]
     return digits
 
 
 def _mask_mobile(mobile):
-    m = (mobile or '').strip()
-    if len(m) < 4:
+    value = (mobile or '').strip()
+    if len(value) <= 4:
         return '****'
-    return ('*' * max(0, len(m) - 4)) + m[-4:]
+    return ('*' * (len(value) - 4)) + value[-4:]
 
 
 def _otp_settings():
     allowed_hosts_raw = os.getenv('OTP_HTTP_ALLOWED_HOSTS', '').strip()
-    allowed_hosts = [h.strip().lower() for h in allowed_hosts_raw.split(',') if h.strip()]
+    allowed_hosts = {h.strip().lower() for h in allowed_hosts_raw.split(',') if h.strip()}
+    try:
+        timeout_sec = int((os.getenv('OTP_HTTP_TIMEOUT_SEC') or '15').strip())
+    except Exception:
+        timeout_sec = 15
+    try:
+        max_retries = int((os.getenv('OTP_HTTP_MAX_RETRIES') or '0').strip())
+    except Exception:
+        max_retries = 0
+    timeout_sec = max(3, min(timeout_sec, 60))
+    max_retries = max(0, min(max_retries, 2))
     return {
         'send_url': os.getenv('OTP_SEND_URL', '').strip(),
         'verify_url': os.getenv('OTP_VERIFY_URL', '').strip(),
         'auth_user': os.getenv('OTP_AUTH_USERNAME', '').strip(),
         'auth_pass': os.getenv('OTP_AUTH_PASSWORD', '').strip(),
-        'otp_type': os.getenv('OTP_TYPE', 'otp').strip(),
-        'app_name': os.getenv('OTP_APP_NAME', 'ita').strip(),
-        'message': os.getenv('OTP_MESSAGE_TEXT', 'Nigaa Authorization OTP is : ').strip(),
+        'otp_type': os.getenv('OTP_TYPE', 'otp').strip() or 'otp',
+        'app_name': os.getenv('OTP_APP_NAME', 'ita').strip() or 'ita',
+        'message': os.getenv('OTP_MESSAGE_TEXT', 'Nigaa login OTP is : ').strip() or 'Nigaa login OTP is : ',
         'user_id': os.getenv('OTP_SERVICE_USER_ID', '').strip(),
-        'timeout': int((os.getenv('OTP_HTTP_TIMEOUT_SEC') or '15').strip()),
+        'timeout': timeout_sec,
+        'max_retries': max_retries,
         'allow_http_internal': os.getenv('OTP_ALLOW_HTTP_INTERNAL', '0').strip().lower() in ('1', 'true', 'yes', 'on'),
-        'http_allowed_hosts': set(allowed_hosts),
+        'http_allowed_hosts': allowed_hosts,
         'http_exception_ticket': os.getenv('OTP_HTTP_EXCEPTION_TICKET', '').strip(),
         'http_exception_approved_by': os.getenv('OTP_HTTP_EXCEPTION_APPROVED_BY', '').strip(),
         'http_exception_reason': os.getenv('OTP_HTTP_EXCEPTION_REASON', '').strip(),
@@ -1336,7 +1420,7 @@ def _otp_settings():
 
 def _otp_settings_valid(settings):
     required = ('send_url', 'verify_url', 'auth_user', 'auth_pass', 'user_id')
-    return all((settings.get(key) or '').strip() for key in required)
+    return all((settings.get(k) or '').strip() for k in required)
 
 
 def _otp_missing_config_keys(settings):
@@ -1354,33 +1438,6 @@ def _otp_missing_config_keys(settings):
     return missing
 
 
-def _otp_post(url, payload, settings):
-    raw = json.dumps(payload).encode('utf-8')
-    auth_raw = f"{settings['auth_user']}:{settings['auth_pass']}".encode('utf-8')
-    auth_b64 = base64.b64encode(auth_raw).decode('utf-8')
-    req = urllib.request.Request(url, data=raw, method='POST')
-    req.add_header('Content-Type', 'application/json')
-    req.add_header('Authorization', f'Basic {auth_b64}')
-    try:
-        with urllib.request.urlopen(req, timeout=settings['timeout']) as resp:
-            body = resp.read().decode('utf-8', errors='ignore') or '{}'
-            try:
-                data = json.loads(body)
-            except Exception:
-                data = {'raw': body}
-            return True, data
-    except urllib.error.HTTPError as e:
-        body = e.read().decode('utf-8', errors='ignore') if hasattr(e, 'read') else ''
-        try:
-            data = json.loads(body) if body else {}
-        except Exception:
-            data = {'raw': body}
-        data.setdefault('http_status', e.code)
-        return False, data
-    except Exception as e:
-        return False, {'error': str(e)}
-
-
 def _otp_host_is_internal_or_allowlisted(hostname, settings):
     host = (hostname or '').strip().lower()
     if not host:
@@ -1393,7 +1450,6 @@ def _otp_host_is_internal_or_allowlisted(hostname, settings):
         addr = ipaddress.ip_address(host)
         return bool(addr.is_private or addr.is_loopback or addr.is_link_local)
     except ValueError:
-        # Non-IP hostname is permitted only when explicitly allowlisted.
         return False
 
 
@@ -1407,7 +1463,6 @@ def _otp_transport_errors(settings):
         scheme = (parsed.scheme or '').lower()
         hostname = parsed.hostname
         env_key = 'OTP_SEND_URL' if key == 'send_url' else 'OTP_VERIFY_URL'
-
         if scheme == 'https':
             continue
         if scheme != 'http':
@@ -1417,9 +1472,7 @@ def _otp_transport_errors(settings):
             errors.append(f'{env_key} uses http://. Set HTTPS endpoint or explicitly approve internal HTTP exception.')
             continue
         if not _otp_host_is_internal_or_allowlisted(hostname, settings):
-            errors.append(
-                f'{env_key} host must be private IP/localhost or in OTP_HTTP_ALLOWED_HOSTS when using internal HTTP exception.'
-            )
+            errors.append(f'{env_key} host must be private/localhost or allowlisted in OTP_HTTP_ALLOWED_HOSTS.')
             continue
         if not (
             settings.get('http_exception_ticket')
@@ -1433,40 +1486,157 @@ def _otp_transport_errors(settings):
     return errors
 
 
-def _otp_success(data):
+def _otp_post(url, payload, settings):
+    raw = json.dumps(payload).encode('utf-8')
+    auth_raw = f"{settings['auth_user']}:{settings['auth_pass']}".encode('utf-8')
+    req = urllib.request.Request(url, data=raw, method='POST')
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Authorization', f'Basic {base64.b64encode(auth_raw).decode("utf-8")}')
+    try:
+        with urllib.request.urlopen(req, timeout=settings['timeout']) as resp:
+            body = resp.read().decode('utf-8', errors='ignore') or '{}'
+            try:
+                data = json.loads(body)
+            except Exception:
+                data = {'raw': body}
+            data.setdefault('http_status', getattr(resp, 'status', 200))
+            return True, data
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='ignore') if hasattr(e, 'read') else ''
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            data = {'raw': body}
+        data.setdefault('http_status', e.code)
+        return False, data
+    except urllib.error.URLError as e:
+        reason = getattr(e, 'reason', e)
+        return False, {'error': str(reason), 'error_type': 'url_error'}
+    except TimeoutError as e:
+        return False, {'error': str(e) or 'timed out', 'error_type': 'timeout'}
+    except Exception as e:
+        return False, {'error': str(e), 'error_type': 'exception'}
+
+
+def _otp_is_retryable_failure(data):
     if not isinstance(data, dict):
         return False
+    status = str(data.get('http_status') or '').strip()
+    if status == '429':
+        return True
+    if status.isdigit() and int(status) >= 500:
+        return True
+    err = str(data.get('error') or '').strip().lower()
+    return any(x in err for x in ('timed out', 'timeout', 'temporarily', 'connection reset', 'network is unreachable'))
+
+
+def _otp_error_message(data, mode='send'):
+    mode_value = (mode or 'send').strip().lower()
+    generic = 'Unable to send OTP. Please try again.' if mode_value == 'send' else 'Invalid OTP. Please try again.'
+    if not isinstance(data, dict):
+        return generic
+
+    explicit = (
+        data.get('message')
+        or data.get('msg')
+        or data.get('description')
+        or data.get('responseMessage')
+        or data.get('error')
+    )
+    if explicit:
+        text = str(explicit).strip()
+    else:
+        text = ''
+
+    http_status = str(data.get('http_status') or '').strip()
+    low = text.lower()
+
+    if any(x in low for x in ('timed out', 'timeout')):
+        return 'OTP service timed out. Please try again in a moment.'
+    if any(x in low for x in ('connection refused', 'network is unreachable', 'no route to host')):
+        return 'OTP service is unreachable from server. Please contact administrator.'
+    if http_status == '401' or http_status == '403':
+        return 'OTP gateway authentication failed. Please contact administrator.'
+    if http_status == '404':
+        return 'OTP gateway endpoint not found. Please contact administrator.'
+    if http_status and http_status.isdigit() and int(http_status) >= 500:
+        return 'OTP gateway is temporarily unavailable. Please try again shortly.'
+
+    if text:
+        return text
+    return generic
+
+
+def _otp_request(url, payload, settings):
+    retries = int(settings.get('max_retries') or 0)
+    last_data = {'error': 'OTP request failed.'}
+    for attempt in range(retries + 1):
+        ok, data = _otp_post(url, payload, settings)
+        if ok:
+            return True, data
+        last_data = data if isinstance(data, dict) else {'raw': str(data)}
+        if not _otp_is_retryable_failure(last_data) or attempt >= retries:
+            break
+    return False, last_data
+
+
+def _otp_success(data, mode='generic'):
+    if not isinstance(data, dict):
+        return False
+    mode_value = (mode or 'generic').strip().lower()
     truthy = {'1', 'true', 'yes', 'ok', 'success', 'verified', 'valid'}
     falsy = {'0', 'false', 'no', 'fail', 'failed', 'invalid', 'error'}
-    keys = ('success', 'status', 'isSuccess', 'verified', 'valid', 'result', 'code')
-    for key in keys:
+    if mode_value == 'send':
+        truthy.add('sent')
+    for key in ('success', 'status', 'isSuccess', 'verified', 'valid', 'result', 'code', 'responseCode', 'response_code'):
         if key not in data:
             continue
         val = data.get(key)
         if isinstance(val, bool):
             return val
-        sval = str(val).strip().lower()
+        sval_raw = str(val).strip()
+        sval = sval_raw.lower()
+        if sval_raw.isdigit():
+            n = int(sval_raw)
+            if mode_value == 'verify':
+                if n == 200:
+                    return True
+                if n >= 400:
+                    return False
+            else:
+                if n in (200, 201):
+                    return True
+                if n >= 400:
+                    return False
         if sval in truthy:
             return True
         if sval in falsy:
             return False
-    msg = str(data.get('message') or data.get('msg') or '').strip().lower()
+    msg = str(
+        data.get('message')
+        or data.get('msg')
+        or data.get('description')
+        or data.get('responseMessage')
+        or ''
+    ).strip().lower()
     if any(x in msg for x in ('invalid', 'failed', 'error', 'expired')):
+        return False
+    if mode_value == 'verify':
+        if any(x in msg for x in ('verified', 'valid', 'validated', 'otp matched', 'otp verified', 'matched successfully')):
+            return True
+        if 'success' in msg and 'sent' not in msg:
+            return True
         return False
     if any(x in msg for x in ('success', 'sent', 'verified', 'valid')):
         return True
     http_status = str(data.get('http_status') or '').strip()
-    if http_status and http_status != '200':
-        return False
-    # Conservative fallback for gateways that only return 200 with opaque body.
-    return bool(data)
+    return http_status == '200'
 
 
 def _send_login_otp(mobile):
     settings = _otp_settings()
     if not _otp_settings_valid(settings):
-        missing = ', '.join(_otp_missing_config_keys(settings))
-        return False, f'OTP gateway is not configured. Missing: {missing}.'
+        return False, f"OTP gateway is not configured. Missing: {', '.join(_otp_missing_config_keys(settings))}."
     transport_errors = _otp_transport_errors(settings)
     if transport_errors:
         return False, f"OTP transport policy violation: {'; '.join(transport_errors)}"
@@ -1477,9 +1647,10 @@ def _send_login_otp(mobile):
         'appName': settings['app_name'],
         'message': settings['message'],
     }
-    ok, data = _otp_post(settings['send_url'], payload, settings)
-    if not ok or not _otp_success(data):
-        msg = data.get('message') or data.get('msg') or 'Unable to send OTP. Please try again.'
+    ok, data = _otp_request(settings['send_url'], payload, settings)
+    if not ok or not _otp_success(data, mode='send'):
+        msg = _otp_error_message(data, mode='send')
+        log_security_event('auth.otp_send_failed', severity='warning', reason=msg)
         return False, str(msg)
     return True, None
 
@@ -1487,8 +1658,7 @@ def _send_login_otp(mobile):
 def _verify_login_otp(mobile, otp_code):
     settings = _otp_settings()
     if not _otp_settings_valid(settings):
-        missing = ', '.join(_otp_missing_config_keys(settings))
-        return False, f'OTP gateway is not configured. Missing: {missing}.'
+        return False, f"OTP gateway is not configured. Missing: {', '.join(_otp_missing_config_keys(settings))}."
     transport_errors = _otp_transport_errors(settings)
     if transport_errors:
         return False, f"OTP transport policy violation: {'; '.join(transport_errors)}"
@@ -1498,9 +1668,10 @@ def _verify_login_otp(mobile, otp_code):
         'userId': settings['user_id'],
         'appName': settings['app_name'],
     }
-    ok, data = _otp_post(settings['verify_url'], payload, settings)
-    if not ok or not _otp_success(data):
-        msg = data.get('message') or data.get('msg') or 'Invalid OTP. Please try again.'
+    ok, data = _otp_request(settings['verify_url'], payload, settings)
+    if not ok or not _otp_success(data, mode='verify'):
+        msg = _otp_error_message(data, mode='verify')
+        log_security_event('auth.otp_verify_failed', severity='warning', reason=msg)
         return False, str(msg)
     return True, None
 
@@ -1508,6 +1679,21 @@ def _verify_login_otp(mobile, otp_code):
 def _clear_pending_otp():
     session.pop('otp_pending_user', None)
     session.pop('otp_pending_mobile', None)
+
+
+def _clear_authenticated_session():
+    for key in (
+        'user_id',
+        'username',
+        'full_name',
+        'user_role',
+        'cvo_office',
+        'phone',
+        'email',
+        'profile_photo',
+        '_csrf_token',
+    ):
+        session.pop(key, None)
 
 
 def _activate_login_session(user):
@@ -1551,6 +1737,11 @@ def resolve_efile_no_for_action(petition, incoming_efile_no, required_message=No
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        if session.get('otp_pending_user') and session.get('otp_pending_mobile'):
+            _clear_authenticated_session()
+            log_security_event('auth.otp_pending_access_blocked', severity='warning')
+            flash('Please complete OTP verification to continue.', 'warning')
+            return redirect(url_for('login'))
         if 'user_id' not in session:
             log_security_event('access.unauthenticated_request', severity='warning')
             flash('Please login to access this page.', 'warning')
@@ -1863,13 +2054,14 @@ def login():
             pending_user = session.get('otp_pending_user')
             pending_mobile = (session.get('otp_pending_mobile') or '').strip()
             otp_code = (request.form.get('otp_code') or '').strip()
+            _clear_authenticated_session()
             if not pending_user or not pending_mobile:
                 flash('OTP session expired. Please login again.', 'warning')
                 _clear_pending_otp()
                 reset_login_captcha()
                 return redirect(url_for('login'))
-            if not otp_code:
-                flash('OTP is required.', 'warning')
+            if not re.fullmatch(r'\d{4,10}', otp_code):
+                flash('OTP must be 4 to 10 digits.', 'warning')
                 return redirect(url_for('login'))
             ok, msg = _verify_login_otp(pending_mobile, otp_code)
             if not ok:
@@ -1916,6 +2108,7 @@ def login():
                     reset_login_captcha()
                     a, b = get_login_captcha()
                     return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=False, otp_mobile_masked='')
+                _clear_authenticated_session()
                 session['otp_pending_user'] = {
                     'id': user['id'],
                     'username': user['username'],
@@ -2947,6 +3140,10 @@ def petition_view(petition_id):
         bool(petition.get('ereceipt_file'))
         and _uploaded_file_exists(ERECEIPT_UPLOAD_DIR, petition.get('ereceipt_file'))
     )
+    conclusion_file_available = (
+        bool(petition.get('conclusion_file'))
+        and _uploaded_file_exists(ENQUIRY_UPLOAD_DIR, petition.get('conclusion_file'))
+    )
     report_file_availability = {
         'report_file': False,
         'cvo_consolidated_report_file': False,
@@ -3016,6 +3213,7 @@ def petition_view(petition_id):
                          ci_assignment_memo=ci_assignment_memo,
                          tracking_file_availability=tracking_file_availability,
                          ereceipt_file_available=ereceipt_file_available,
+                         conclusion_file_available=conclusion_file_available,
                          report_file_availability=report_file_availability)
 
 # ========================================
