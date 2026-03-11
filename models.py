@@ -175,6 +175,26 @@ def ensure_schema_updates():
             ON password_reset_requests (status, created_at DESC)
         """)
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS help_resources (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                resource_type VARCHAR(20) NOT NULL,
+                storage_kind VARCHAR(20) NOT NULL DEFAULT 'upload',
+                file_name VARCHAR(255),
+                external_url TEXT,
+                mime_type VARCHAR(120),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                display_order INTEGER NOT NULL DEFAULT 0,
+                uploaded_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_help_resources_active_order
+            ON help_resources (is_active, resource_type, display_order, created_at DESC)
+        """)
+        cur.execute("""
             ALTER TABLE petition_tracking
             ADD COLUMN IF NOT EXISTS attachment_file VARCHAR(255)
         """)
@@ -891,6 +911,121 @@ def get_petition_by_id(petition_id):
         """, (petition_id,))
         result = cur.fetchone()
         return dict(result) if result else None
+    finally:
+        conn.close()
+
+
+def list_help_resources(active_only=False):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        where_clause = "WHERE is_active = TRUE" if active_only else ""
+        cur.execute(f"""
+            SELECT hr.id, hr.title, hr.resource_type, hr.storage_kind, hr.file_name, hr.external_url,
+                   hr.mime_type, hr.is_active, hr.display_order, hr.created_at, hr.updated_at,
+                   u.full_name AS uploaded_by_name
+            FROM help_resources hr
+            LEFT JOIN users u ON u.id = hr.uploaded_by
+            {where_clause}
+            ORDER BY hr.display_order ASC, hr.created_at DESC, hr.id DESC
+        """)
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_help_resource_by_id(resource_id):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT id, title, resource_type, storage_kind, file_name, external_url,
+                   mime_type, is_active, display_order, created_at, updated_at, uploaded_by
+            FROM help_resources
+            WHERE id = %s
+        """, (resource_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_help_resource(title, resource_type, storage_kind, file_name=None, external_url=None, mime_type=None, display_order=0, uploaded_by=None):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            INSERT INTO help_resources
+                (title, resource_type, storage_kind, file_name, external_url, mime_type, display_order, uploaded_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (title, resource_type, storage_kind, file_name, external_url, mime_type, display_order, uploaded_by))
+        row = cur.fetchone()
+        conn.commit()
+        return row['id'] if row else None
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def ensure_help_resource(title, resource_type, storage_kind, file_name=None, external_url=None, mime_type=None, display_order=0, uploaded_by=None):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT id
+            FROM help_resources
+            WHERE title = %s
+              AND resource_type = %s
+              AND storage_kind = %s
+              AND COALESCE(file_name, '') = COALESCE(%s, '')
+              AND COALESCE(external_url, '') = COALESCE(%s, '')
+            LIMIT 1
+        """, (title, resource_type, storage_kind, file_name, external_url))
+        existing = cur.fetchone()
+        if existing:
+            cur.execute("""
+                UPDATE help_resources
+                SET mime_type = COALESCE(%s, mime_type),
+                    display_order = %s,
+                    is_active = TRUE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (mime_type, display_order, existing['id']))
+            conn.commit()
+            return existing['id']
+        cur.execute("""
+            INSERT INTO help_resources
+                (title, resource_type, storage_kind, file_name, external_url, mime_type, is_active, display_order, uploaded_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s, %s, CURRENT_TIMESTAMP)
+            RETURNING id
+        """, (title, resource_type, storage_kind, file_name, external_url, mime_type, display_order, uploaded_by))
+        row = cur.fetchone()
+        conn.commit()
+        return row['id'] if row else None
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def set_help_resource_active(resource_id, is_active):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            UPDATE help_resources
+            SET is_active = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (bool(is_active), resource_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
     finally:
         conn.close()
 

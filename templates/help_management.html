@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Help Resources - Petition Tracker{% endblock %}
+{% block page_title %}Help Resources{% endblock %}
+
+{% block content %}
+<div class="card form-mgmt-hero">
+    <div class="card-header">
+        <h2>Help Resource Management</h2>
+    </div>
+    <div class="form-mgmt-hero-body">
+        <p>Upload user manuals, flowcharts, and training videos here. All active resources appear in every user login under the profile menu Help Center.</p>
+    </div>
+</div>
+
+<div class="card form-mgmt-section">
+    <div class="card-header">
+        <h3>Add Help Resource</h3>
+    </div>
+    <form method="POST" action="{{ url_for('help_management') }}" enctype="multipart/form-data" class="form-mgmt-field-card form-mgmt-add-card">
+        <input type="hidden" name="action" value="upload">
+        <div class="form-mgmt-add-grid">
+            <div class="form-group">
+                <label>Title <span class="required">*</span></label>
+                <input type="text" name="title" required placeholder="Example: Nigaa User Manual v1.0">
+            </div>
+            <div class="form-group">
+                <label>Resource Type <span class="required">*</span></label>
+                <select name="resource_type" required>
+                    <option value="manual">User Manual</option>
+                    <option value="flowchart">Flowchart</option>
+                    <option value="video">Video</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Source Type <span class="required">*</span></label>
+                <select name="storage_kind" id="helpStorageKind" required>
+                    <option value="upload">Upload File</option>
+                    <option value="external_url">External URL</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Display Order</label>
+                <input type="number" name="display_order" value="0" min="0">
+            </div>
+            <div class="form-group full-width" id="helpUploadWrap">
+                <label>Upload File <span class="required">*</span></label>
+                <input type="file" name="resource_file" id="helpUploadInput" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.svg,.mp4,.webm,.mov">
+                <small>Supported: documents, images, and videos up to 10 MB.</small>
+            </div>
+            <div class="form-group full-width" id="helpUrlWrap" style="display:none;">
+                <label>External URL <span class="required">*</span></label>
+                <input type="url" name="external_url" id="helpUrlInput" placeholder="https://example.com/video">
+            </div>
+            <div class="form-mgmt-add-actions">
+                <button type="submit" class="btn btn-primary btn-sm">Save Resource</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="card form-mgmt-section">
+    <div class="card-header">
+        <h3>Existing Resources</h3>
+        <span class="form-mgmt-count">{{ resources|length }} items</span>
+    </div>
+    <div class="form-mgmt-grid">
+        {% for resource in resources %}
+        <article class="form-mgmt-field-card">
+            <div class="form-mgmt-field-head">
+                <strong>{{ resource.title }}</strong>
+                <span class="status-badge {{ 'status-closed' if not resource.is_active else 'status-open' }}">
+                    {{ 'Active' if resource.is_active else 'Hidden' }}
+                </span>
+            </div>
+            <div class="form-mgmt-field-body">
+                <div class="form-group">
+                    <label>Type</label>
+                    <div>{{ resource.resource_type|replace('_', ' ')|title }}</div>
+                </div>
+                <div class="form-group">
+                    <label>Source</label>
+                    <div>{{ 'Uploaded File' if resource.storage_kind == 'upload' else 'External URL' }}</div>
+                </div>
+                <div class="form-group full-width">
+                    <label>Access</label>
+                    {% if resource.storage_kind == 'upload' and resource.file_name %}
+                    <a href="{{ url_for('help_resource_file', filename=resource.file_name) }}" target="_blank" rel="noopener">{{ resource.file_name }}</a>
+                    {% elif resource.external_url %}
+                    <a href="{{ resource.external_url }}" target="_blank" rel="noopener">{{ resource.external_url }}</a>
+                    {% else %}
+                    <span>-</span>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label>Order</label>
+                    <div>{{ resource.display_order or 0 }}</div>
+                </div>
+                <div class="form-group">
+                    <label>Uploaded By</label>
+                    <div>{{ resource.uploaded_by_name or '-' }}</div>
+                </div>
+            </div>
+            <div class="form-mgmt-actions">
+                <form method="POST" action="{{ url_for('help_management') }}">
+                    <input type="hidden" name="action" value="toggle_active">
+                    <input type="hidden" name="resource_id" value="{{ resource.id }}">
+                    <input type="hidden" name="activate" value="{{ 0 if resource.is_active else 1 }}">
+                    <button type="submit" class="btn btn-outline btn-sm">
+                        {{ 'Hide from users' if resource.is_active else 'Show to users' }}
+                    </button>
+                </form>
+            </div>
+        </article>
+        {% else %}
+        <div class="empty-state">No help resources added yet.</div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+(() => {
+    const storageSelect = document.getElementById('helpStorageKind');
+    const uploadWrap = document.getElementById('helpUploadWrap');
+    const uploadInput = document.getElementById('helpUploadInput');
+    const urlWrap = document.getElementById('helpUrlWrap');
+    const urlInput = document.getElementById('helpUrlInput');
+
+    function syncHelpSourceMode() {
+        const useUpload = (storageSelect?.value || 'upload') === 'upload';
+        if (uploadWrap) uploadWrap.style.display = useUpload ? '' : 'none';
+        if (urlWrap) urlWrap.style.display = useUpload ? 'none' : '';
+        if (uploadInput) uploadInput.required = useUpload;
+        if (urlInput) urlInput.required = !useUpload;
+    }
+
+    storageSelect?.addEventListener('change', syncHelpSourceMode);
+    syncHelpSourceMode();
+})();
+</script>
+{% endblock %}

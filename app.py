@@ -12,6 +12,7 @@ import copy
 import random
 import json
 import base64
+import mimetypes
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -55,9 +56,17 @@ BASE_UPLOAD_DIR = config.UPLOAD_BASE_DIR
 ERECEIPT_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, 'e_receipts')
 ENQUIRY_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, 'enquiry_reports')
 PROFILE_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, 'profile_photos')
+HELP_RESOURCE_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, 'help_resources')
 MAX_UPLOAD_SIZE_BYTES = config.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 PROFILE_PHOTO_MAX_BYTES = 2 * 1024 * 1024
 PROFILE_PHOTO_EXTENSIONS = {'jpg', 'jpeg', 'png', 'webp'}
+HELP_RESOURCE_ALLOWED_EXTENSIONS = {
+    'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',
+    'jpg', 'jpeg', 'png', 'webp', 'svg',
+    'mp4', 'webm', 'mov'
+}
+HELP_RESOURCE_TYPES = {'manual', 'flowchart', 'video'}
+HELP_RESOURCE_STORAGE_KINDS = {'upload', 'external_url'}
 LOGIN_ATTEMPTS = {}
 VALID_RECEIVED_AT = {'jmd_office', 'cvo_apspdcl_tirupathi', 'cvo_apepdcl_vizag', 'cvo_apcpdcl_vijayawada'}
 VALID_TARGET_CVO = {'apspdcl', 'apepdcl', 'apcpdcl', 'headquarters'}
@@ -723,6 +732,7 @@ def ensure_upload_dirs():
     os.makedirs(ERECEIPT_UPLOAD_DIR, exist_ok=True)
     os.makedirs(ENQUIRY_UPLOAD_DIR, exist_ok=True)
     os.makedirs(PROFILE_UPLOAD_DIR, exist_ok=True)
+    os.makedirs(HELP_RESOURCE_UPLOAD_DIR, exist_ok=True)
 
 
 def _normalize_storage_relpath(path_value):
@@ -814,6 +824,32 @@ def validate_profile_photo_upload(file_obj, user_id=None):
     photo_user_id = user_id if user_id is not None else session.get('user_id', 'x')
     stored_name = f"user_{photo_user_id}_{uuid4().hex}.{ext}"
     return True, stored_name, None
+
+
+def validate_help_resource_upload(file_obj):
+    if not file_obj or not file_obj.filename:
+        return True, None, None, None
+
+    safe_name = secure_filename(file_obj.filename or '')
+    if not safe_name:
+        return False, None, None, 'Resource filename is invalid.'
+
+    ext = safe_name.rsplit('.', 1)[-1].lower() if '.' in safe_name else ''
+    if ext not in HELP_RESOURCE_ALLOWED_EXTENSIONS:
+        allowed = ', '.join(sorted(HELP_RESOURCE_ALLOWED_EXTENSIONS))
+        return False, None, None, f'Resource file type is not supported. Allowed: {allowed}.'
+
+    file_obj.seek(0, os.SEEK_END)
+    size = file_obj.tell()
+    file_obj.seek(0)
+    if size <= 0:
+        return False, None, None, 'Resource file is empty.'
+    if size > MAX_UPLOAD_SIZE_BYTES:
+        return False, None, None, f'Resource file must be below {config.MAX_UPLOAD_SIZE_MB} MB.'
+
+    stored_name = f"help_{uuid4().hex}.{ext}"
+    mime_type = mimetypes.guess_type(safe_name)[0] or 'application/octet-stream'
+    return True, stored_name, mime_type, None
 
 
 def validate_password_strength(password, label='Password'):
@@ -4299,6 +4335,130 @@ def profile_photo_file(filename):
             log_security_event('access.profile_photo_forbidden', severity='warning', owner_id=owner_id)
             return Response(status=403)
     return send_from_directory(PROFILE_UPLOAD_DIR, filename, as_attachment=False)
+
+
+@app.route('/help-resources/files/<path:filename>')
+@login_required
+def help_resource_file(filename):
+    filename = _normalize_storage_relpath(filename)
+    if not filename:
+        return Response(status=404)
+    if not _uploaded_file_exists(HELP_RESOURCE_UPLOAD_DIR, filename):
+        return Response(status=404)
+    return send_from_directory(HELP_RESOURCE_UPLOAD_DIR, filename, as_attachment=False)
+
+
+@app.route('/help-center')
+@login_required
+def help_center():
+    resources = models.list_help_resources(active_only=True)
+    grouped_resources = {key: [] for key in ('manual', 'flowchart', 'video')}
+    for resource in resources:
+        entry = dict(resource)
+        mime_type = (entry.get('mime_type') or '').strip().lower()
+        file_name = (entry.get('file_name') or '').strip().lower()
+        if entry.get('storage_kind') == 'upload' and entry.get('file_name'):
+            entry['view_url'] = url_for('help_resource_file', filename=entry['file_name'])
+        elif entry.get('storage_kind') == 'external_url':
+            entry['view_url'] = entry.get('external_url')
+        else:
+            entry['view_url'] = None
+        entry['preview_kind'] = None
+        if entry.get('storage_kind') == 'upload' and entry.get('view_url'):
+            if mime_type == 'application/pdf' or file_name.endswith('.pdf'):
+                entry['preview_kind'] = 'pdf'
+            elif mime_type.startswith('image/') or file_name.endswith(('.jpg', '.jpeg', '.png', '.webp', '.svg')):
+                entry['preview_kind'] = 'image'
+            elif mime_type.startswith('video/') or file_name.endswith(('.mp4', '.webm', '.mov')):
+                entry['preview_kind'] = 'video'
+        grouped_resources.setdefault(entry.get('resource_type') or 'manual', []).append(entry)
+    return render_template('help_center.html', grouped_resources=grouped_resources)
+
+
+@app.route('/help-management', methods=['GET', 'POST'])
+@login_required
+@role_required('super_admin')
+def help_management():
+    if request.method == 'POST':
+        action = (request.form.get('action') or 'upload').strip()
+        if action == 'toggle_active':
+            resource_id = parse_optional_int(request.form.get('resource_id'))
+            should_activate = request.form.get('activate') == '1'
+            if not resource_id:
+                flash('Invalid help resource selection.', 'warning')
+                return redirect(url_for('help_management'))
+            try:
+                models.set_help_resource_active(resource_id, should_activate)
+                flash('Help resource visibility updated.', 'success')
+            except Exception:
+                flash_internal_error('Unable to update help resource visibility. Please contact administrator.')
+            return redirect(url_for('help_management'))
+
+        title = (request.form.get('title') or '').strip()
+        resource_type = (request.form.get('resource_type') or '').strip()
+        storage_kind = (request.form.get('storage_kind') or 'upload').strip()
+        external_url = (request.form.get('external_url') or '').strip() or None
+        display_order_raw = (request.form.get('display_order') or '0').strip()
+        upload = request.files.get('resource_file')
+
+        if not title:
+            flash('Resource title is required.', 'warning')
+            return redirect(url_for('help_management'))
+        if resource_type not in HELP_RESOURCE_TYPES:
+            flash('Please select a valid resource type.', 'warning')
+            return redirect(url_for('help_management'))
+        if storage_kind not in HELP_RESOURCE_STORAGE_KINDS:
+            flash('Please select a valid resource source.', 'warning')
+            return redirect(url_for('help_management'))
+        try:
+            display_order = int(display_order_raw or '0')
+        except ValueError:
+            flash('Display order must be a number.', 'warning')
+            return redirect(url_for('help_management'))
+
+        file_name = None
+        mime_type = None
+        if storage_kind == 'upload':
+            ok_upload, stored_name, detected_mime_type, upload_error = validate_help_resource_upload(upload)
+            if not ok_upload:
+                flash(upload_error, 'warning')
+                return redirect(url_for('help_management'))
+            if not stored_name or not upload:
+                flash('Please choose a file to upload.', 'warning')
+                return redirect(url_for('help_management'))
+            ensure_upload_dirs()
+            saved_ok, save_result = _save_uploaded_file(upload, HELP_RESOURCE_UPLOAD_DIR, stored_name, 'Help resource', use_date_subdir=True)
+            if not saved_ok:
+                flash(save_result, 'danger')
+                return redirect(url_for('help_management'))
+            file_name = save_result
+            mime_type = detected_mime_type
+        else:
+            parsed = urllib.parse.urlparse(external_url or '')
+            if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+                flash('Please provide a valid external URL.', 'warning')
+                return redirect(url_for('help_management'))
+
+        try:
+            models.create_help_resource(
+                title=title,
+                resource_type=resource_type,
+                storage_kind=storage_kind,
+                file_name=file_name,
+                external_url=external_url,
+                mime_type=mime_type,
+                display_order=display_order,
+                uploaded_by=session['user_id'],
+            )
+            flash('Help resource added successfully.', 'success')
+        except Exception:
+            if file_name:
+                _delete_uploaded_file(HELP_RESOURCE_UPLOAD_DIR, file_name)
+            flash_internal_error('Unable to save help resource. Please contact administrator.')
+        return redirect(url_for('help_management'))
+
+    resources = models.list_help_resources(active_only=False)
+    return render_template('help_management.html', resources=resources)
 
 
 @app.route('/profile', methods=['GET', 'POST'])

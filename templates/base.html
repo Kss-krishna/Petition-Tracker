@@ -51,6 +51,10 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
                     <span data-i18n="nav.profile">My Profile</span>
                 </a>
+                <a href="{{ url_for('help_center') }}" class="nav-item {% if request.endpoint == 'help_center' %}active{% endif %}">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 2-3 4"/><path d="M12 17h.01"/></svg>
+                    <span data-i18n="nav.help_center">Help Center</span>
+                </a>
                 {% if current_user_role == 'po' %}
                 <a href="{{ url_for('petitions_list', mode='direct') }}" class="nav-item {% if request.endpoint == 'petitions_list' and request.args.get('mode') == 'direct' %}active{% endif %}">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
@@ -81,6 +85,10 @@
                 <a href="{{ url_for('form_management') }}" class="nav-item {% if request.endpoint == 'form_management' %}active{% endif %}">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3"/><path d="M3 8h18"/><path d="M5 21h14"/><path d="M6 8l1 13"/><path d="M18 8l-1 13"/></svg>
                     <span data-i18n="nav.form_management">Form Management</span>
+                </a>
+                <a href="{{ url_for('help_management') }}" class="nav-item {% if request.endpoint == 'help_management' %}active{% endif %}">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    <span data-i18n="nav.help_management">Help Resources</span>
                 </a>
                 {% endif %}
             </nav>
@@ -158,6 +166,9 @@
                             <div class="notif-list">
                                 <a href="{{ url_for('profile') }}" class="notif-item">
                                     <span class="notif-item-top" data-i18n="nav.profile">My Profile</span>
+                                </a>
+                                <a href="{{ url_for('help_center') }}" class="notif-item">
+                                    <span class="notif-item-top" data-i18n="nav.help_center">Help Center</span>
                                 </a>
                                 <a href="{{ url_for('logout') }}" class="notif-item">
                                     <span class="notif-item-top" data-i18n="top.logout">Logout</span>
