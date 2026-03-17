@@ -894,4 +894,3 @@ function initPetitionerProfiles() {
     window.closePetitionerProfileModal = closeModal;
 }
 
-

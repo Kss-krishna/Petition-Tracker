@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git config:*)",
+      "Bash(claude)",
+      "Bash(Get-Content \"c:\\\\Users\\\\AP TRANSCO\\\\OneDrive - APTRANSCO\\\\Pictures\\\\Petition Tracker with chatbot\\\\static\\\\css\\\\style.css\")",
+      "Bash(Select-Object -Last 10)",
+      "Bash(git -C \"c:/Users/AP TRANSCO/OneDrive - APTRANSCO/Pictures/Petition Tracker with chatbot\" log --oneline --format=\"%h %ai %s\" -10)",
+      "Bash(python -c \":*)",
+      "Bash(git -C \"c:/Users/AP TRANSCO/OneDrive - APTRANSCO/Pictures/Petition Tracker with chatbot\" checkout HEAD -- templates/login.html)",
+      "Bash(git -C \"c:/Users/AP TRANSCO/OneDrive - APTRANSCO/Pictures/Petition Tracker with chatbot\" diff templates/login.html)",
+      "Bash(git -C \"c:/Users/AP TRANSCO/OneDrive - APTRANSCO/Pictures/Petition Tracker with chatbot\" show HEAD:templates/login.html)",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\AP TRANSCO\\\\OneDrive - APTRANSCO\\\\Pictures\\\\Petition Tracker with chatbot''; git show HEAD:templates/login.html\")"
+    ]
+  }
+}

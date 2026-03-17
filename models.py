@@ -915,11 +915,194 @@ def get_petition_by_id(petition_id):
         conn.close()
 
 
+def search_petitions(user_id, user_role, cvo_office, query, search_type='all', limit=6):
+    """Search petitions for chatbot by name, efile_no, ereceipt_no, or sno."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        q = f'%{query.strip()}%'
+
+        if user_role == 'super_admin':
+            access_filter = 'TRUE'
+            access_params = []
+        elif user_role == 'po':
+            access_filter = 'TRUE'
+            access_params = []
+        elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+            access_filter = 'p.target_cvo = %s'
+            access_params = [cvo_office]
+        elif user_role == 'inspector':
+            access_filter = 'p.assigned_inspector_id = %s'
+            access_params = [user_id]
+        elif user_role == 'data_entry':
+            access_filter = 'p.created_by = %s'
+            access_params = [user_id]
+        else:
+            access_filter = 'p.current_handler_id = %s'
+            access_params = [user_id]
+
+        if search_type == 'name':
+            search_filter = 'p.petitioner_name ILIKE %s'
+            search_params = [q]
+        elif search_type == 'efile':
+            search_filter = 'p.efile_no ILIKE %s'
+            search_params = [q]
+        elif search_type == 'ereceipt':
+            search_filter = 'p.ereceipt_no ILIKE %s'
+            search_params = [q]
+        elif search_type == 'sno':
+            search_filter = 'p.sno ILIKE %s'
+            search_params = [q]
+        else:
+            search_filter = '(p.petitioner_name ILIKE %s OR p.efile_no ILIKE %s OR p.ereceipt_no ILIKE %s OR p.sno ILIKE %s)'
+            search_params = [q, q, q, q]
+
+        all_params = access_params + search_params + [limit]
+        cur.execute(f"""
+            SELECT p.id, p.sno, p.petitioner_name, p.efile_no, p.ereceipt_no,
+                   p.subject, p.petition_type, p.status, p.received_date,
+                   p.target_cvo, p.place
+            FROM petitions p
+            WHERE {access_filter} AND {search_filter}
+            ORDER BY p.received_date DESC NULLS LAST
+            LIMIT %s
+        """, all_params)
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_petition_stats_for_chatbot(user_id, user_role, cvo_office):
+    """Get petition count summary for chatbot."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        if user_role in ('super_admin', 'po'):
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions
+            """)
+        elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions WHERE target_cvo = %s
+            """, (cvo_office,))
+        elif user_role == 'inspector':
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions WHERE assigned_inspector_id = %s
+            """, (user_id,))
+        else:
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions WHERE current_handler_id = %s
+            """, (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else {'total': 0, 'received': 0, 'closed': 0, 'open': 0}
+    finally:
+        conn.close()
+
+
+def get_pending_petitions_for_chatbot(user_id, user_role, cvo_office, limit=8):
+    """Return open/pending petitions that need action, role-scoped."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+
+        if user_role == 'super_admin':
+            access_filter = "TRUE"
+            access_params = []
+        elif user_role == 'po':
+            access_filter = "p.status IN ('forwarded_to_po','forwarded_to_jmd','sent_for_permission')"
+            access_params = []
+        elif user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
+            access_filter = "p.status = 'action_instructed' AND p.current_handler_id = %s"
+            access_params = [user_id]
+        elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+            access_filter = "p.target_cvo = %s AND p.status NOT IN ('closed','lodged','action_taken')"
+            access_params = [cvo_office]
+        elif user_role == 'inspector':
+            access_filter = "p.assigned_inspector_id = %s AND p.status IN ('assigned_to_inspector','enquiry_in_progress','sent_back_for_reenquiry')"
+            access_params = [user_id]
+        elif user_role == 'data_entry':
+            access_filter = "p.created_by = %s AND p.status NOT IN ('closed','lodged')"
+            access_params = [user_id]
+        else:
+            access_filter = "p.current_handler_id = %s AND p.status NOT IN ('closed','lodged')"
+            access_params = [user_id]
+
+        cur.execute(f"""
+            SELECT p.id, p.sno, p.petitioner_name, p.efile_no, p.ereceipt_no,
+                   p.subject, p.petition_type, p.status, p.received_date,
+                   p.target_cvo, p.place,
+                   p.updated_at
+            FROM petitions p
+            WHERE {access_filter}
+            ORDER BY p.received_date ASC NULLS LAST
+            LIMIT %s
+        """, access_params + [limit])
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_recent_updates_for_chatbot(user_id, user_role, cvo_office, limit=8):
+    """Return petitions most recently updated/changed in status, role-scoped."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+
+        if user_role == 'super_admin':
+            access_filter = "TRUE"
+            access_params = []
+        elif user_role == 'po':
+            access_filter = "TRUE"
+            access_params = []
+        elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
+            access_filter = "p.target_cvo = %s"
+            access_params = [cvo_office]
+        elif user_role == 'inspector':
+            access_filter = "p.assigned_inspector_id = %s"
+            access_params = [user_id]
+        elif user_role == 'data_entry':
+            access_filter = "p.created_by = %s"
+            access_params = [user_id]
+        else:
+            access_filter = "p.current_handler_id = %s"
+            access_params = [user_id]
+
+        cur.execute(f"""
+            SELECT p.id, p.sno, p.petitioner_name, p.efile_no, p.ereceipt_no,
+                   p.subject, p.petition_type, p.status, p.received_date,
+                   p.target_cvo, p.place,
+                   p.updated_at
+            FROM petitions p
+            WHERE {access_filter} AND p.updated_at IS NOT NULL
+            ORDER BY p.updated_at DESC NULLS LAST
+            LIMIT %s
+        """, access_params + [limit])
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def list_help_resources(active_only=False):
     conn = get_db()
     try:
         cur = dict_cursor(conn)
-        where_clause = "WHERE is_active = TRUE" if active_only else ""
+        where_clause = "WHERE hr.is_active = TRUE" if active_only else ""
         cur.execute(f"""
             SELECT hr.id, hr.title, hr.resource_type, hr.storage_kind, hr.file_name, hr.external_url,
                    hr.mime_type, hr.is_active, hr.display_order, hr.created_at, hr.updated_at,

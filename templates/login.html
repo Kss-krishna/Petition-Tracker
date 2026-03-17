@@ -1,448 +1,1396 @@
 {% extends "base.html" %}
-{% block title %}Login - Petition Tracker{% endblock %}
+{% block title %}Login — Nigaa Vigilance Portal{% endblock %}
 
 {% block fullpage %}
 <style>
-  /* ===== LOGIN PAGE: LANDING.HTML VISUAL STYLE OVERRIDE ===== */
+/* ============================================================
+   NIGAA LOGIN — LANDING PAGE DESIGN SYSTEM
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* Dark navy background matching landing */
-  .login-page.login-page-modern {
-    background: #0A1628;
-  }
+/* ── Hide all scrollbars globally on this page ── */
+html, body, .lp, .lp-card, .lp-card-wrap {
+  scrollbar-width: none !important;        /* Firefox */
+  -ms-overflow-style: none !important;     /* IE/Edge */
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.lp::-webkit-scrollbar,
+.lp-card::-webkit-scrollbar,
+.lp-card-wrap::-webkit-scrollbar { display: none !important; }
 
-  /* Replace light aurora with landing's dark glow */
-  .login-page-modern .login-aurora {
-    background:
-      radial-gradient(ellipse 60% 50% at 20% 20%, rgba(245,166,35,0.10) 0%, transparent 70%),
-      radial-gradient(ellipse 40% 60% at 80% 80%, rgba(27,50,96,0.50) 0%, transparent 70%),
-      radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,22,40,1) 0%, #0A1628 100%);
-    animation: none;
-    filter: none;
-  }
-
-  /* Subtle dark grid */
-  .login-page-modern .login-grid {
-    background-image:
-      linear-gradient(rgba(245,166,35,0.04) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(245,166,35,0.04) 1px, transparent 1px);
-    opacity: 0.5;
-  }
-
-  /* Nav - match landing nav */
-  .login-top-nav {
-    background: rgba(10,22,40,0.80) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border-bottom: 1px solid rgba(245,166,35,0.12) !important;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.30) !important;
-  }
-  .login-nav-shield {
-    border-color: rgba(245,166,35,0.50);
-    background: rgba(245,166,35,0.08);
-  }
-  .login-nav-title { color: #F5A623; }
-  .login-nav-sub   { color: #8899B0; }
-  .login-nav-links a:not(.login-btn-launch) { color: #8899B0; }
-  .login-nav-links a:not(.login-btn-launch):hover { color: #F5A623; }
-  .login-btn-launch {
-    background: linear-gradient(135deg, #F5A623, #C78200);
-    color: #0A1628;
-    box-shadow: 0 4px 20px rgba(245,166,35,0.30);
-  }
-  .login-btn-launch:hover { box-shadow: 0 8px 30px rgba(245,166,35,0.50); }
-
-  /* Shell — dark glass card */
-  .login-shell {
-    background: rgba(19,34,64,0.72);
-    border: 1px solid rgba(245,166,35,0.12);
-    box-shadow: 0 24px 64px rgba(0,0,0,0.45), inset 0 1px 0 rgba(245,166,35,0.06);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border-radius: 26px;
-  }
-
-  /* Panel — dark form area */
-  .login-panel {
-    background:
-      radial-gradient(circle at -12% -8%, rgba(245,166,35,0.08), transparent 36%),
-      linear-gradient(180deg, rgba(10,22,40,0.96), rgba(13,26,50,0.96));
-    border-right: 1px solid rgba(245,166,35,0.08);
-  }
-
-  /* Tabs */
-  .login-tabs {
-    background: rgba(19,34,64,0.80);
-    border: 1px solid rgba(245,166,35,0.12);
-  }
-  .login-tabs button   { color: #8899B0; }
-  .login-tabs .is-muted { color: #4a5a78; }
-  .login-tabs .is-active {
-    color: #F5A623;
-    background: rgba(245,166,35,0.06);
-    box-shadow: inset 0 -3px 0 #F5A623;
-  }
-
-  /* Logo wrap */
-  .login-logo-wrap {
-    background: linear-gradient(160deg, rgba(19,34,64,0.9), rgba(10,22,40,0.9));
-    border-color: rgba(245,166,35,0.30);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.30), 0 0 0 1px rgba(245,166,35,0.08);
-  }
-
-  /* Header text */
-  .login-header h1 { color: #F0F2F5; }
-  .login-subtitle  { color: #8899B0; }
-
-  /* Form labels */
-  .login-form .form-group label { color: #8899B0; }
-
-  /* Inputs - dark with gold focus */
-  .login-page-modern .login-form input {
-    background: rgba(19,34,64,0.80);
-    border: 1px solid rgba(245,166,35,0.14);
-    color: #F0F2F5;
-    border-radius: 14px;
-  }
-  .login-page-modern .login-form input::placeholder { color: #4a5a78; }
-  .login-page-modern .login-form input:focus {
-    border-color: #F5A623;
-    background: rgba(19,34,64,0.96);
-    box-shadow: 0 0 0 3px rgba(245,166,35,0.14);
-    transform: translateY(-1px) scale(1.005);
-  }
-
-  /* Captcha */
-  .login-captcha-box {
-    background: rgba(10,22,40,0.90);
-    border: 1px solid rgba(245,166,35,0.22);
-    color: #F0F2F5;
-  }
-  .login-captcha-text { color: #F5A623; font-weight: 800; letter-spacing: 2px; }
-  .login-captcha-refresh {
-    background: rgba(245,166,35,0.08);
-    border-color: rgba(245,166,35,0.25);
-    color: #F5A623;
-  }
-  .login-captcha-refresh:hover { background: rgba(245,166,35,0.18); }
-
-  /* Submit button — gold gradient matching landing */
-  .login-page-modern .login-form .btn {
-    background: linear-gradient(135deg, #F5A623, #C78200);
-    color: #0A1628;
-    border: none;
-    box-shadow: 0 8px 28px rgba(245,166,35,0.30);
-    border-radius: 14px;
-    font-weight: 700;
-  }
-  .login-page-modern .login-form .btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 14px 36px rgba(245,166,35,0.45);
-  }
-  .login-captcha-verify {
-    background: linear-gradient(135deg, #F5A623, #C78200) !important;
-    color: #0A1628 !important;
-    box-shadow: 0 8px 28px rgba(245,166,35,0.30) !important;
-    border-radius: 14px !important;
-  }
-
-  /* Footer */
-  .login-footer { color: #8899B0; }
-
-  /* ===== MOBILE FIXES ===== */
-
-  /* iOS: prevent auto-zoom on input focus (font-size must be >= 16px) */
-  @media (max-width: 768px) {
-    .login-page-modern .login-form input {
-      font-size: 16px;
-    }
-    /* No transform on mobile — avoids layout shift when keyboard opens */
-    .login-page-modern .login-form input:focus {
-      transform: none;
-    }
-  }
-
-  /* Small phones: restore original 14px shell border-radius */
-  @media (max-width: 640px) {
-    .login-shell {
-      border-radius: 14px;
-    }
-  }
-
-  /* Hero side - dark matching landing */
-  .login-hero {
-    background:
-      radial-gradient(circle at 70% 30%, rgba(255,255,255,0.04), transparent 34%),
-      radial-gradient(circle at 30% 70%, rgba(245,166,35,0.12), transparent 44%),
-      linear-gradient(150deg, rgba(19,34,64,0.98), rgba(10,22,40,0.99));
-  }
-  .login-hero::before {
-    background:
-      radial-gradient(circle at 62% 44%, rgba(245,166,35,0.16), transparent 58%),
-      radial-gradient(circle at 76% 70%, rgba(55,95,170,0.20), transparent 48%);
-  }
-  .login-hero::after {
-    border-color: rgba(245,166,35,0.18);
-    background: linear-gradient(145deg, rgba(245,166,35,0.08), rgba(20,40,76,0.05));
-  }
-  .login-hero-mark {
-    background: rgba(19,34,64,0.90);
-    border: 1px solid rgba(245,166,35,0.35);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.35), 0 0 0 1px rgba(245,166,35,0.06);
-  }
-  .login-hero h2 { color: #F5A623; }
-  .login-hero p  { color: #8899B0; }
-
-  /* Orbit widget */
-  .login-orbit {
-    background:
-      linear-gradient(145deg, rgba(245,166,35,0.10), rgba(19,34,64,0.60)),
-      radial-gradient(circle at 20% 70%, rgba(245,166,35,0.10), transparent 44%);
-    border-color: rgba(245,166,35,0.30);
-  }
-
-  /* Hero pills - landing badge style */
-  .hero-pill {
-    background: rgba(245,166,35,0.08);
-    border: 1px solid rgba(245,166,35,0.25);
-    color: #F5A623;
-  }
-
-  /* ===== LIGHT THEME RESTORE (when user toggles to light) ===== */
-  html[data-theme='light'] .login-page.login-page-modern { background: #e8f0ff; }
-  html[data-theme='light'] .login-page-modern .login-aurora {
-    background:
-      radial-gradient(circle at 18% 20%, rgba(245,166,35,0.22), transparent 34%),
-      radial-gradient(circle at 78% 78%, rgba(48,91,179,0.30), transparent 34%),
-      radial-gradient(circle at 86% 24%, rgba(255,213,128,0.20), transparent 30%),
-      linear-gradient(145deg, #f3f7ff 0%, #e4edff 38%, #dce7ff 100%);
-    animation: loginAurora 14s ease-in-out infinite alternate;
-    filter: saturate(1.08);
-  }
-  html[data-theme='light'] .login-shell {
-    background: linear-gradient(180deg, rgba(250,252,255,0.90), rgba(237,244,255,0.80));
-    border-color: rgba(64,90,144,0.24);
-    box-shadow: 0 28px 62px rgba(18,35,70,0.20), inset 0 1px 0 rgba(255,255,255,0.65);
-  }
-  html[data-theme='light'] .login-panel {
-    background:
-      radial-gradient(circle at -12% -8%, rgba(245,166,35,0.14), transparent 36%),
-      linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,251,255,0.94));
-    border-right-color: rgba(53,77,124,0.14);
-  }
-  html[data-theme='light'] .login-tabs { background: linear-gradient(180deg,#f4f7fe,#ebf2ff); border-color: #cfdbf4; }
-  html[data-theme='light'] .login-tabs button { color: #6f84ae; }
-  html[data-theme='light'] .login-tabs .is-active { color: #16366f; background: #ffffff; box-shadow: inset 0 -3px 0 #f5a623, 0 4px 14px rgba(53,83,145,0.10); }
-  html[data-theme='light'] .login-logo-wrap { background: linear-gradient(160deg,#fffaf0,#f2f6ff); border-color: #e7d6ae; box-shadow: 0 12px 24px rgba(133,92,24,0.18); }
-  html[data-theme='light'] .login-header h1 { color: #17356a; }
-  html[data-theme='light'] .login-subtitle   { color: #5f7398; }
-  html[data-theme='light'] .login-form .form-group label { color: #324f86; }
-  html[data-theme='light'] .login-page-modern .login-form input { background: linear-gradient(180deg,#f9fcff,#f3f8ff); border-color: #cfdcf3; color: #17356a; }
-  html[data-theme='light'] .login-page-modern .login-form input::placeholder { color: #94a8c8; }
-  html[data-theme='light'] .login-captcha-box { background: linear-gradient(145deg,#132240,#0a1628); border-color: rgba(28,48,86,0.38); color: #f9fbff; }
-  html[data-theme='light'] .login-captcha-text { color: #F5A623; }
-  html[data-theme='light'] .login-captcha-refresh { background: #fff5e2; border-color: #e2c78f; color: #9a6200; }
-  html[data-theme='light'] .login-captcha-refresh:hover { background: #ffecc6; }
-  html[data-theme='light'] .login-footer { color: #5f7398; }
-  html[data-theme='light'] .login-top-nav {
-    background: radial-gradient(circle at 14% 50%,rgba(245,166,35,0.16),transparent 26%), linear-gradient(90deg,rgba(11,30,68,0.98),rgba(18,46,96,0.96) 42%,rgba(10,29,67,0.98)) !important;
-    border-bottom-color: rgba(97,122,170,0.34) !important;
-    box-shadow: 0 18px 42px rgba(10,23,49,0.38) !important;
-  }
-  html[data-theme='light'] .login-nav-title { color: #f5a623; }
-  html[data-theme='light'] .login-nav-sub   { color: rgba(229,237,255,0.80); }
-  html[data-theme='light'] .login-nav-links a:not(.login-btn-launch) { color: rgba(224,234,255,0.72); }
-  html[data-theme='light'] .login-hero {
-    background:
-      radial-gradient(circle at 70% 30%,rgba(255,255,255,0.14),transparent 34%),
-      radial-gradient(circle at 78% 74%,rgba(245,166,35,0.20),transparent 40%),
-      linear-gradient(150deg,rgba(19,34,64,0.94),rgba(10,22,40,0.96));
-  }
-  html[data-theme='light'] .login-hero-mark { background: rgba(255,255,255,0.92); border-color: rgba(245,166,35,0.42); box-shadow: 0 14px 30px rgba(133,92,24,0.28); }
-  html[data-theme='light'] .hero-pill { background: rgba(255,255,255,0.92); border-color: rgba(245,166,35,0.44); color: #8f5f00; }
-  html[data-theme='light'] .login-orbit {
-    background: linear-gradient(145deg,rgba(245,166,35,0.16),rgba(19,34,64,0.52)), radial-gradient(circle at 20% 70%,rgba(245,166,35,0.16),transparent 44%);
-    border-color: rgba(245,166,35,0.42);
-  }
-</style>
-<div class="login-page login-page-modern">
-    <div class="login-aurora"></div>
-    <div class="login-grid"></div>
-    <nav class="login-top-nav" id="loginTopNav">
-        <a href="{{ url_for('index') }}" class="login-nav-brand">
-            <span class="login-nav-shield">
-                <img src="{{ url_for('static', filename='img/nigaa-logo.svg') }}" alt="NIGAA Logo">
-            </span>
-            <div>
-                <h1 class="login-nav-title login-brand-anim" aria-label="NIGAA">
-                    <span class="brand-letter brand-n">N</span>
-                    <span class="brand-letter brand-i">I</span>
-                    <span class="brand-letter brand-g">G</span>
-                    <span class="brand-letter brand-a">
-                        A
-                        <span class="brand-cap"></span>
-                        <span class="brand-eye-wrap">
-                            <span class="brand-eye"><span class="brand-pupil"></span></span>
-                        </span>
-                    </span>
-                    <span class="brand-letter brand-a">
-                        A
-                        <span class="brand-eye-wrap">
-                            <span class="brand-eye"><span class="brand-pupil"></span></span>
-                        </span>
-                    </span>
-                </h1>
-                <div class="login-nav-sub" data-i18n="login.vigilance_portal">Vigilance Portal</div>
-            </div>
-        </a>
-        <div class="login-nav-links">
-            <a href="{{ url_for('index') }}#features" data-i18n="common.features">Features</a>
-            <a href="{{ url_for('index') }}#stats" data-i18n="nav.dashboard">Dashboard</a>
-            <div class="lang-toggle" role="group" aria-label="Language switch">
-                <button type="button" class="lang-pill" data-lang="en">EN</button>
-                <button type="button" class="lang-pill" data-lang="te">TE</button>
-            </div>
-            <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle night mode" aria-pressed="false" title="Toggle night mode">
-                <span class="theme-toggle-icon theme-toggle-sun" aria-hidden="true">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/></svg>
-                </span>
-                <span class="theme-toggle-icon theme-toggle-moon" aria-hidden="true">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
-                </span>
-            </button>
-            <a href="{{ url_for('index') }}" class="login-btn-launch"><span>&#9654;</span> <span data-i18n="common.home">Home</span></a>
-        </div>
-    </nav>
-    <div class="login-shell">
-        <section class="login-panel">
-            <div class="login-tabs" role="tablist" aria-label="Login options">
-                <button type="button" class="is-active" data-login-tab="secure" onclick="showLoginTab('secure')" data-i18n="login.tab_secure">Secure Login</button>
-                <button type="button" class="is-muted" data-login-tab="recovery" onclick="showLoginTab('recovery')" data-i18n="login.tab_recovery">Password Recovery</button>
-            </div>
-            <div class="login-header">
-                <div class="login-logo-wrap">
-                    <img src="{{ url_for('static', filename=brand_logo_file) }}" alt="{{ brand_name }} Logo" class="login-logo-img" onerror="this.onerror=null;this.src='{{ url_for('static', filename=brand_logo_fallback) }}';">
-                </div>
-                <h1>{{ brand_name }}</h1>
-                <p class="login-subtitle">{{ brand_subtitle }}</p>
-            </div>
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-            {% set ns = namespace(seen=[]) %}
-            {% for category, message in messages %}
-            {% set key = category ~ '|' ~ message %}
-            {% if key not in ns.seen %}
-            <div class="flash-msg flash-{{ category }}" style="margin-bottom: 1rem;">
-                <span>{{ message }}</span>
-            </div>
-            {% set ns.seen = ns.seen + [key] %}
-            {% endif %}
-            {% endfor %}
-            {% endif %}
-            {% endwith %}
-
-            {% if otp_required %}
-            <form method="POST" action="{{ url_for('login') }}" class="login-form" data-login-panel="secure">
-                <input type="hidden" name="login_action" value="verify_otp">
-                <div class="form-group">
-                    <label data-i18n="login.mobile_verification">Mobile Verification</label>
-                    <input type="text" value="{{ otp_mobile_masked }}" readonly>
-                    <small class="form-help" data-i18n="login.otp_help">Enter OTP sent to your registered mobile number.</small>
-                </div>
-                <div class="form-group">
-                    <label for="otp_code" data-i18n="login.otp">OTP</label>
-                    <input type="text" id="otp_code" name="otp_code" required inputmode="numeric" pattern="[0-9]+" maxlength="10" placeholder="Enter OTP" data-i18n-placeholder="login.ph_otp">
-                </div>
-                <button type="submit" class="btn btn-primary btn-full login-captcha-verify" data-i18n="login.verify_otp">Verify OTP</button>
-                <div class="form-actions" style="margin-top:8px; display:flex; gap:8px;">
-                    <button type="submit" name="login_action" value="resend_otp" class="btn btn-outline btn-full" data-i18n="login.resend_otp">Resend OTP</button>
-                    <a href="{{ url_for('login', reset_otp='1') }}" class="btn btn-outline btn-full" data-i18n="login.change_login">Change Login</a>
-                </div>
-            </form>
-            {% else %}
-            <form method="POST" action="{{ url_for('login') }}" class="login-form" data-login-panel="secure">
-                <input type="hidden" name="login_action" value="credentials">
-                <div class="form-group">
-                    <label for="username" data-i18n="login.username">Username</label>
-                    <input type="text" id="username" name="username" required autofocus
-                           placeholder="Enter your username" data-i18n-placeholder="login.ph_username" value="{{ request.form.get('username', '') }}">
-                </div>
-                <div class="form-group">
-                    <label for="password" data-i18n="login.password">Password</label>
-                    <input type="password" id="password" name="password" required
-                           placeholder="Enter your password" data-i18n-placeholder="login.ph_password">
-                </div>
-                <div class="form-group">
-                    <label for="captcha_answer" data-i18n="login.security_verification">Security Verification</label>
-                    <div class="login-captcha-row">
-                        <div class="login-captcha-box" aria-live="polite">
-                            <span class="login-captcha-text">{{ captcha_a }} + {{ captcha_b }} = ?</span>
-                            <a href="{{ url_for('login', refresh_captcha='1') }}" class="login-captcha-refresh" title="Refresh captcha" aria-label="Refresh captcha" data-i18n-title="login.refresh_captcha" data-i18n-aria-label="login.refresh_captcha">&#8635;</a>
-                        </div>
-                        <input type="text" id="captcha_answer" name="captcha_answer" required inputmode="numeric" pattern="[0-9]+" placeholder="Enter the CAPTCHA answer" data-i18n-placeholder="login.ph_captcha">
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary btn-full login-captcha-verify">
-                    <span data-i18n="login.verify_signin">Verify & Sign In</span>
-                </button>
-            </form>
-            {% endif %}
-
-            <form method="POST" action="{{ url_for('request_recovery') }}" class="login-form" data-login-panel="recovery" style="display:none;">
-                <div class="form-group">
-                    <label for="recovery_username" data-i18n="login.username">Username</label>
-                    <input type="text" id="recovery_username" name="recovery_username" placeholder="Enter your username" data-i18n-placeholder="login.ph_username">
-                </div>
-                <div class="form-group">
-                    <label for="recovery_password" data-i18n="login.new_password">New Password</label>
-                    <input type="password" id="recovery_password" name="recovery_password" minlength="6" placeholder="Enter new password" data-i18n-placeholder="login.ph_new_password">
-                </div>
-                <div class="form-group">
-                    <label for="recovery_confirm_password" data-i18n="login.confirm_new_password">Confirm New Password</label>
-                    <input type="password" id="recovery_confirm_password" name="recovery_confirm_password" minlength="6" placeholder="Confirm new password" data-i18n-placeholder="login.ph_confirm_new_password">
-                </div>
-                <button type="submit" class="btn btn-primary btn-full" data-i18n="login.submit_recovery">Submit Recovery Request</button>
-            </form>
-
-            <div class="login-footer">
-                <p data-i18n="login.footer_wing">Vigilance Wing</p>
-            </div>
-        </section>
-        <aside class="login-hero">
-            <div class="login-hero-mark">
-                <img src="{{ url_for('static', filename=brand_logo_file) }}" alt="{{ brand_name }} Mark" class="login-hero-logo" onerror="this.onerror=null;this.src='{{ url_for('static', filename=brand_logo_fallback) }}';">
-            </div>
-            <h2><span data-i18n="login.hero.title_prefix">Welcome to</span> {{ brand_name }}</h2>
-            <p data-i18n="login.hero.subtitle">Secure digital vigilance workflow for officers, enquiry tracking, and action monitoring.</p>
-            <div class="login-orbit">
-                <span class="orbit-ring orbit-ring-a"></span>
-                <span class="orbit-ring orbit-ring-b"></span>
-                <span class="orbit-core"></span>
-            </div>
-            <div class="login-hero-pills">
-                <span class="hero-pill" data-i18n="login.hero.pill_realtime">Realtime Tracking</span>
-                <span class="hero-pill" data-i18n="login.hero.pill_role_based">Role Based Access</span>
-                <span class="hero-pill" data-i18n="login.hero.pill_secure">Secure Workflow</span>
-            </div>
-        </aside>
-    </div>
-</div>
-<script>
-function showLoginTab(tabName) {
-    const tabs = document.querySelectorAll('.login-tabs [data-login-tab]');
-    const panels = document.querySelectorAll('.login-form[data-login-panel]');
-    tabs.forEach(btn => {
-        const active = btn.dataset.loginTab === tabName;
-        btn.classList.toggle('is-active', active);
-        btn.classList.toggle('is-muted', !active);
-    });
-    panels.forEach(panel => {
-        panel.style.display = panel.dataset.loginPanel === tabName ? '' : 'none';
-    });
+:root {
+  --gold:       #F5A623;
+  --gold-light: #FFD580;
+  --gold-dark:  #C78200;
+  --navy:       #0A1628;
+  --navy-mid:   #132240;
+  --navy-light: #1B3260;
+  --text-dim:   #8899B0;
+  --white:      #F0F2F5;
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    showLoginTab('secure');
+.lp {
+  position: fixed; inset: 0;
+  font-family: 'DM Sans', sans-serif;
+  background: var(--navy);
+  color: var(--white);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Noise texture overlay (identical to landing) ── */
+.lp-noise {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* ── Background radial glow (identical to landing) ── */
+.lp-bg-glow {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 30% 20%, rgba(245,166,35,0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 60% at 80% 80%, rgba(27,50,96,0.40) 0%, transparent 70%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,22,40,1) 0%, var(--navy) 100%);
+}
+
+/* ── Floating gold particles (identical to landing) ── */
+.lp-particles { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.lp-particle {
+  position: absolute; width: 3px; height: 3px;
+  background: var(--gold); border-radius: 50%; opacity: 0;
+  animation: lpFloatUp 6s ease-in infinite;
+}
+@keyframes lpFloatUp {
+  0%   { opacity: 0; transform: translateY(100vh) scale(0); }
+  20%  { opacity: 0.6; }
+  80%  { opacity: 0.3; }
+  100% { opacity: 0; transform: translateY(-10vh) scale(1.5); }
+}
+
+/* ── Nav (identical to landing) ── */
+.lp-nav {
+  position: relative; z-index: 100;
+  padding: 0.85rem 2.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+  backdrop-filter: blur(20px);
+  background: rgba(10,22,40,0.80);
+  border-bottom: 1px solid rgba(245,166,35,0.12);
+  flex-shrink: 0;
+}
+.lp-nav-brand {
+  display: flex; align-items: center; gap: 0.8rem;
+  text-decoration: none;
+}
+.lp-nav-shield {
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  animation: shieldPulse 3s ease-in-out infinite;
+}
+.lp-nav-shield img { width: 100%; height: 100%; object-fit: contain; }
+@keyframes shieldPulse {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(245,166,35,0.30)); }
+  50%       { filter: drop-shadow(0 0 20px rgba(245,166,35,0.60)); }
+}
+.lp-nav-brand-text { display: flex; flex-direction: column; line-height: 1; }
+.lp-nav-title {
+  font-family: 'Dela Gothic One', sans-serif;
+  font-size: 1.3rem; color: var(--gold); letter-spacing: 2px;
+}
+.lp-nav-sub {
+  font-size: 0.60rem; color: var(--text-dim);
+  letter-spacing: 3px; text-transform: uppercase; margin-top: 2px;
+}
+.lp-nav-right { display: flex; align-items: center; gap: 1.4rem; }
+.lp-nav-links { display: flex; gap: 1.8rem; align-items: center; }
+.lp-nav-links a {
+  color: var(--text-dim); text-decoration: none;
+  font-size: 0.82rem; font-weight: 600;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  transition: color 0.3s;
+}
+.lp-nav-links a:hover { color: var(--gold); }
+
+/* Language toggle — strip base.css styles, apply login-page styles */
+.lp-navbar .lang-toggle {
+  display: flex !important; gap: 5px !important; align-items: center !important;
+  background: none !important; border: none !important; box-shadow: none !important;
+  padding: 0 !important; height: auto !important;
+  transform: none !important; position: static !important;
+}
+.lp-navbar .lang-toggle::before { display: none !important; }
+
+.lp-navbar .lang-pill,
+html[data-theme='dark'] .lp-navbar .lang-pill {
+  padding: 6px 12px !important; border-radius: 8px !important;
+  font-size: 0.71rem !important; font-weight: 700 !important; letter-spacing: 0.5px !important;
+  color: rgba(255,255,255,0.50) !important;
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.11) !important;
+  cursor: pointer !important; transition: all 0.18s !important;
+  font-family: 'DM Sans', sans-serif !important;
+  display: inline-flex !important; align-items: center !important;
+  opacity: 1 !important; transform: none !important; box-shadow: none !important;
+}
+.lp-navbar .lang-pill:hover,
+html[data-theme='dark'] .lp-navbar .lang-pill:hover {
+  color: #fff !important; background: rgba(255,255,255,0.13) !important;
+  border-color: rgba(255,255,255,0.22) !important;
+}
+/* app.js sets .is-active on the active lang-pill */
+.lp-navbar .lang-pill.is-active,
+html[data-theme='dark'] .lp-navbar .lang-pill.is-active {
+  color: var(--gold) !important;
+  background: rgba(245,166,35,0.14) !important;
+  border-color: rgba(245,166,35,0.30) !important;
+  opacity: 1 !important; transform: none !important;
+}
+/* Light theme */
+html[data-theme='light'] .lp-navbar .lang-toggle { background: none !important; }
+html[data-theme='light'] .lp-navbar .lang-pill {
+  color: #4060a0 !important; background: rgba(255,255,255,0.75) !important;
+  border-color: rgba(80,120,200,0.25) !important;
+}
+html[data-theme='light'] .lp-navbar .lang-pill:hover {
+  color: #1a3d8f !important; background: #fff !important;
+}
+html[data-theme='light'] .lp-navbar .lang-pill.is-active {
+  color: #C78200 !important; background: rgba(245,166,35,0.12) !important;
+  border-color: rgba(199,130,0,0.30) !important;
+}
+
+/* Theme toggle — from landing (pill slider), fully overridden for this page */
+#lpThemeToggle {
+  position: relative;
+  width: 58px; height: 30px;
+  border: 1px solid #d4deef;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f3f6fc, #e7edf8);
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+  color: #95a1b8;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 6px 14px rgba(36,66,140,0.12);
+  transition: background 0.35s, border-color 0.35s, box-shadow 0.35s, transform 0.24s;
+}
+#lpThemeToggle::before {
+  content: '';
+  position: absolute; left: 3px; top: 3px;
+  width: 22px; height: 22px; border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 5px 12px rgba(28,47,90,0.20);
+  transform: translateX(0);
+  transition: transform 0.42s cubic-bezier(0.22,1,0.36,1), background 0.35s, box-shadow 0.35s;
+}
+#lpThemeToggle:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.90), 0 9px 16px rgba(36,66,140,0.18);
+}
+.lp-tt-icon {
+  position: relative; z-index: 1;
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color 0.35s, opacity 0.35s;
+}
+.lp-tt-sun  { color: #f59e0b; }
+.lp-tt-moon { color: #6c7a9a; }
+html[data-theme='dark'] #lpThemeToggle {
+  background: linear-gradient(180deg, #20293d, #141a2a);
+  border-color: #36405a;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 22px rgba(8,12,20,0.45);
+}
+html[data-theme='dark'] #lpThemeToggle::before {
+  transform: translateX(28px);
+  background: #1f2638; box-shadow: 0 5px 12px rgba(1,4,10,0.55);
+}
+html[data-theme='dark'] .lp-tt-sun  { color: #7a849d; }
+html[data-theme='dark'] .lp-tt-moon { color: #d0ddff; }
+
+/* Gold CTA button (from landing) */
+.lp-btn-launch {
+  background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+  color: var(--navy); padding: 0.60rem 1.6rem; border-radius: 50px;
+  font-weight: 700; font-size: 0.82rem; letter-spacing: 1px;
+  text-decoration: none; text-transform: uppercase; transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(245,166,35,0.30);
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  white-space: nowrap;
+}
+.lp-btn-launch:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,166,35,0.50); }
+
+/* ── Main body ─────────────────────────────────────────────── */
+.lp-main {
+  flex: 1; display: flex;
+  position: relative; z-index: 2;
+  overflow: hidden;
+}
+
+/* ── Left: visual scene — full height SVG, no caption ── */
+.lp-scene {
+  flex: 1; position: relative; overflow: hidden;
+}
+.lp-scene-svg-wrap {
+  position: absolute; inset: 0;
+}
+.lp-scene-svg {
+  width: 100%; height: 100%;
+}
+/* Subtle bottom fade so scene melts into the page edge cleanly */
+.lp-scene::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 120px;
+  background: linear-gradient(to top, rgba(10,22,40,0.60), transparent);
+  pointer-events: none;
+}
+
+@keyframes lpFadeUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+@keyframes lpBlink  { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes spinTurbine { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* ── Right: Login card ──────────────────────────────────────── */
+.lp-card-wrap {
+  width: 480px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 28px;
+  position: relative;
+  /* vertical separator */
+  border-left: 1px solid rgba(245,166,35,0.08);
+  background: rgba(10,22,40,0.55);
+  backdrop-filter: blur(20px);
+}
+.lp-card {
+  width: 100%; position: relative; z-index: 1;
+  background: rgba(15,28,55,0.88);
+  border: 1px solid rgba(245,166,35,0.18);
+  border-radius: 20px;
+  padding: 28px 26px 20px;
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.50), 0 0 0 1px rgba(245,166,35,0.05);
+  animation: lpCardIn 0.65s cubic-bezier(0.22,1,0.36,1) 0.12s both;
+  overflow: hidden;
+}
+@keyframes lpCardIn {
+  from { opacity:0; transform: translateX(30px); }
+  to   { opacity:1; transform: translateX(0); }
+}
+
+/* Card header */
+.lp-card-title {
+  font-family: 'Dela Gothic One', sans-serif;
+  font-size: 1.45rem; color: var(--white); line-height: 1.2;
+  margin-bottom: 3px;
+}
+.lp-card-title .gold { color: var(--gold); }
+.lp-card-sub { font-size: 0.78rem; color: var(--text-dim); margin-bottom: 13px; line-height: 1.4; }
+
+/* Divider */
+.lp-divider {
+  height: 1px; background: rgba(245,166,35,0.10); margin: 10px 0;
+}
+
+/* Tabs */
+.lp-tabs {
+  display: flex; gap: 4px; padding: 3px;
+  background: rgba(10,22,40,0.60);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px; margin-bottom: 13px;
+}
+.lp-tab {
+  flex: 1; padding: 7px 10px;
+  background: transparent; border: none;
+  color: var(--text-dim); font-size: 0.78rem; font-weight: 600;
+  border-radius: 7px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+  transition: all 0.2s; letter-spacing: 0.3px;
+}
+.lp-tab.active {
+  background: rgba(245,166,35,0.14);
+  color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(245,166,35,0.22);
+}
+
+/* Flash messages */
+.lp-alert {
+  padding: 10px 13px; border-radius: 10px;
+  font-size: 0.80rem; margin-bottom: 14px;
+  display: flex; align-items: flex-start; gap: 8px; line-height: 1.45;
+}
+.lp-alert-error   { background:rgba(239,68,68,0.10);  border:1px solid rgba(239,68,68,0.25);  color:#fca5a5; }
+.lp-alert-success { background:rgba(34,197,94,0.10);  border:1px solid rgba(34,197,94,0.25);  color:#86efac; }
+.lp-alert-warning { background:rgba(245,166,35,0.10); border:1px solid rgba(245,166,35,0.25); color:#fcd34d; }
+.lp-alert-info    { background:rgba(99,102,241,0.10); border:1px solid rgba(99,102,241,0.25); color:#a5b4fc; }
+.lp-alert-danger  { background:rgba(239,68,68,0.10);  border:1px solid rgba(239,68,68,0.25);  color:#fca5a5; }
+
+/* Fields */
+.lp-field { margin-bottom: 10px; }
+.lp-field label {
+  display: block; font-size: 0.69rem; font-weight: 700;
+  color: var(--text-dim); letter-spacing: 1px;
+  text-transform: uppercase; margin-bottom: 5px;
+}
+.lp-input-wrap { position: relative; }
+.lp-field input {
+  width: 100%; background: rgba(10,22,40,0.65);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px; padding: 10px 40px 10px 13px;
+  color: var(--white); font-size: 0.88rem;
+  font-family: 'DM Sans', sans-serif; outline: none;
+  transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
+}
+.lp-field input::placeholder { color: rgba(136,153,176,0.55); }
+.lp-field input:focus {
+  border-color: rgba(245,166,35,0.50);
+  background: rgba(19,34,64,0.80);
+  box-shadow: 0 0 0 3px rgba(245,166,35,0.10);
+}
+.lp-field input[readonly] { opacity: 0.55; cursor: default; }
+.lp-input-icon {
+  position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+  color: var(--text-dim); display: flex; align-items: center; pointer-events: none;
+}
+.lp-input-icon.clickable { pointer-events: auto; cursor: pointer; transition: color 0.2s; }
+.lp-input-icon.clickable:hover { color: var(--gold); }
+.lp-field-help { font-size: 0.70rem; color: var(--text-dim); margin-top: 5px; opacity:0.70; }
+
+/* Captcha */
+.lp-captcha-row { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; }
+.lp-captcha-box {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(10,22,40,0.85);
+  border: 1px solid rgba(245,166,35,0.28); border-radius: 10px;
+  padding: 11px 13px; white-space: nowrap;
+}
+.lp-captcha-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem; font-weight: 700;
+  color: var(--gold); letter-spacing: 2px;
+}
+.lp-captcha-refresh {
+  background: rgba(245,166,35,0.10); border: 1px solid rgba(245,166,35,0.22);
+  color: var(--gold); border-radius: 6px; padding: 4px 7px; font-size: 0.95rem;
+  cursor: pointer; text-decoration: none; transition: background 0.2s; line-height: 1;
+}
+.lp-captcha-refresh:hover { background: rgba(245,166,35,0.22); }
+
+/* Terms */
+.lp-terms { font-size: 0.72rem; color: var(--text-dim); margin-bottom: 10px; line-height: 1.4; }
+.lp-terms a { color: var(--gold); text-decoration: none; }
+.lp-terms a:hover { text-decoration: underline; }
+
+/* Primary button (gold, from landing) */
+.lp-btn-primary {
+  width: 100%; padding: 11px 20px;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%);
+  border: none; border-radius: 50px;
+  color: var(--navy); font-size: 0.92rem; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.8px; text-transform: uppercase;
+  box-shadow: 0 4px 24px rgba(245,166,35,0.35);
+  transition: transform 0.25s, box-shadow 0.25s;
+  font-family: 'DM Sans', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.lp-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(245,166,35,0.50); }
+.lp-btn-primary:active { transform: translateY(0); }
+.lp-btn-arrow {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(10,22,40,0.22);
+}
+
+/* Outline button */
+.lp-btn-outline {
+  flex: 1; padding: 11px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 50px; color: var(--text-dim);
+  font-size: 0.80rem; font-weight: 600;
+  cursor: pointer; text-align: center; text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'DM Sans', sans-serif; transition: all 0.2s;
+}
+.lp-btn-outline:hover { background: rgba(245,166,35,0.08); color: var(--gold); border-color: rgba(245,166,35,0.25); }
+.lp-btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+/* Secondary link */
+.lp-link {
+  font-size: 0.78rem; color: var(--gold); text-decoration: none; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.2s;
+}
+.lp-link:hover { opacity: 0.75; }
+.lp-secondary-row {
+  display: flex; align-items: center; justify-content: flex-end; margin-top: 8px;
+}
+
+/* Card footer */
+.lp-card-footer {
+  text-align: center; margin-top: 10px;
+  font-size: 0.72rem; color: rgba(136,153,176,0.55);
+}
+.lp-card-footer a { color: var(--gold); text-decoration: none; }
+
+/* ── Responsive ── */
+@media (max-width: 960px) {
+  .lp-scene { display: none; }
+  .lp-card-wrap { width: 100%; }
+}
+@media (max-width: 560px) {
+  .lp-nav { padding: 1rem 1.2rem; }
+  .lp-nav-sub, .lp-nav-links { display: none; }
+  .lp-card-wrap { padding: 12px 16px 24px; }
+  .lp-card { padding: 26px 20px 22px; border-radius: 18px; }
+}
+
+/* ── Light theme ── */
+/* ================================================================
+   LIGHT THEME — full overhaul matching the app's light palette
+   ================================================================ */
+
+/* Page background */
+html[data-theme='light'] .lp {
+  background: linear-gradient(145deg, #eaf3ff 0%, #d9eaff 52%, #cde2ff 100%);
+}
+html[data-theme='light'] .lp-bg-glow {
+  background:
+    radial-gradient(ellipse 55% 45% at 30% 20%, rgba(100,160,255,0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 50% at 80% 80%, rgba(67,130,220,0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 80% 80% at 50% 50%, rgba(220,234,255,1) 0%, #cde2ff 100%);
+}
+html[data-theme='light'] .lp-particle { background: #4a7fd4; }
+
+/* Nav */
+html[data-theme='light'] .lp-nav {
+  background: linear-gradient(90deg, rgba(224,237,255,0.97), rgba(204,225,250,0.96));
+  border-bottom: 1px solid rgba(100,150,220,0.30);
+  box-shadow: 0 4px 20px rgba(60,100,180,0.12);
+}
+html[data-theme='light'] .lp-nav-title { color: #1a3d8f; }
+html[data-theme='light'] .lp-nav-sub  { color: #5c78ab; }
+html[data-theme='light'] .lp-nav-links a { color: #4060a0; }
+html[data-theme='light'] .lp-nav-links a:hover { color: #C78200; }
+html[data-theme='light'] .lp-lang-btn {
+  color: #4060a0; background: rgba(255,255,255,0.70);
+  border-color: rgba(80,120,200,0.25);
+}
+html[data-theme='light'] .lp-lang-btn:hover { color: #1a3d8f; background: #fff; }
+html[data-theme='light'] .lp-lang-btn.lp-lang-active {
+  color: #C78200; background: rgba(245,166,35,0.12);
+  border-color: rgba(199,130,0,0.30);
+}
+html[data-theme='light'] .lp-btn-launch {
+  background: linear-gradient(135deg, #F5A623, #C78200);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(199,130,0,0.30);
+}
+
+/* Scene left panel — keep SVG as-is but lighten the overlay */
+html[data-theme='light'] .lp-scene::after {
+  background: linear-gradient(to top, rgba(205,226,255,0.70), transparent);
+}
+
+/* Card wrap */
+html[data-theme='light'] .lp-card-wrap {
+  background: rgba(240,247,255,0.70);
+  border-left: 1px solid rgba(100,150,220,0.18);
+  backdrop-filter: blur(20px);
+}
+
+/* Card */
+html[data-theme='light'] .lp-card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,250,255,0.97));
+  border: 1px solid rgba(100,150,220,0.22);
+  box-shadow: 0 20px 60px rgba(40,80,160,0.14), 0 0 0 1px rgba(100,150,220,0.10);
+}
+
+/* Card title & subtitle */
+html[data-theme='light'] .lp-card-title { color: #0f2557; }
+html[data-theme='light'] .lp-card-title .gold { color: #C78200; }
+html[data-theme='light'] .lp-card-sub { color: #5c78ab; }
+
+/* Tabs */
+html[data-theme='light'] .lp-tabs {
+  background: linear-gradient(180deg, #f0f5ff, #e6f0ff);
+  border: 1px solid #c8d8f0;
+}
+html[data-theme='light'] .lp-tab { color: #7a94c4; }
+html[data-theme='light'] .lp-tab.active {
+  background: #fff; color: #1a3d8f;
+  box-shadow: 0 1px 8px rgba(40,80,160,0.14);
+}
+
+/* Labels */
+html[data-theme='light'] .lp-field label { color: #3a568c; }
+
+/* Inputs */
+html[data-theme='light'] .lp-field input {
+  background: #fff;
+  border: 1.5px solid #c8d8f0;
+  color: #0f2557;
+  box-shadow: 0 1px 4px rgba(40,80,160,0.07);
+}
+html[data-theme='light'] .lp-field input::placeholder { color: #aabbd8; }
+html[data-theme='light'] .lp-field input:focus {
+  border-color: #4a7fd4;
+  box-shadow: 0 0 0 3px rgba(74,127,212,0.12);
+}
+html[data-theme='light'] .lp-input-icon { color: #8aaad0; }
+html[data-theme='light'] .lp-input-icon.clickable:hover { color: #C78200; }
+html[data-theme='light'] .lp-field-help { color: #7a94c4; }
+
+/* Captcha */
+html[data-theme='light'] .lp-captcha-box {
+  background: #0f2557;
+  border-color: rgba(245,166,35,0.40);
+}
+
+/* Terms */
+html[data-theme='light'] .lp-terms { color: #5c78ab; }
+html[data-theme='light'] .lp-terms a { color: #C78200; }
+
+/* Forgot / back links */
+html[data-theme='light'] .lp-link { color: #C78200; }
+
+/* Secondary outline buttons */
+html[data-theme='light'] .lp-btn-outline {
+  background: #f0f5ff; border-color: #c8d8f0; color: #3a568c;
+}
+html[data-theme='light'] .lp-btn-outline:hover {
+  background: #e4edff; color: #0f2557; border-color: #a0bce0;
+}
+
+/* Divider */
+html[data-theme='light'] .lp-divider { background: rgba(100,150,220,0.18); }
+
+/* Footer */
+html[data-theme='light'] .lp-card-footer { color: #8aaad0; }
+
+/* Flash alerts stay the same — they're semantic colours */
+
+/* Responsive overrides for light */
+@media (max-width: 960px) {
+  html[data-theme='light'] .lp-card-wrap {
+    background: rgba(224,237,255,0.85);
+  }
+}
+</style>
+
+<!-- Noise + glow layers -->
+<div class="lp-noise"></div>
+<div class="lp-bg-glow"></div>
+
+<!-- Gold particles -->
+<div class="lp-particles" id="lpParticles"></div>
+
+<div class="lp">
+
+  <!-- ══════════ NAV (identical to landing) ══════════ -->
+  <nav class="lp-nav">
+    <a href="{{ url_for('index') }}" class="lp-nav-brand">
+      <div class="lp-nav-shield">
+        <img src="{{ url_for('static', filename=brand_logo_file) }}" alt="{{ brand_name }}"
+             onerror="this.onerror=null;this.src='{{ url_for('static', filename=brand_logo_fallback) }}';">
+      </div>
+      <div class="lp-nav-brand-text">
+        <span class="lp-nav-title">NIGAA</span>
+        <span class="lp-nav-sub">Vigilance Portal</span>
+      </div>
+    </a>
+
+    <div class="lp-nav-right">
+      <nav class="lp-nav-links">
+        <a href="{{ url_for('index') }}" data-i18n="nav.features">Features</a>
+        {% if session.get('user_id') %}
+        <a href="{{ url_for('dashboard') }}" data-i18n="nav.dashboard">Dashboard</a>
+        {% endif %}
+      </nav>
+
+      <!-- Language pills — uses lang-toggle + lang-pill so app.js handles switching -->
+      <div class="lp-lang-wrap lang-toggle" role="group" aria-label="Language switch">
+        <button type="button" class="lp-lang-btn lang-pill" data-lang="en">EN</button>
+        <button type="button" class="lp-lang-btn lang-pill" data-lang="te">TE</button>
+      </div>
+
+      <!-- Theme toggle (pill slider, same as landing) -->
+      <button id="lpThemeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
+        <span class="lp-tt-icon lp-tt-sun" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </span>
+        <span class="lp-tt-icon lp-tt-moon" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+        </span>
+      </button>
+
+      <a href="{{ url_for('index') }}" class="lp-btn-launch">
+        &#9654; <span data-i18n="common.home">Home</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ══════════ MAIN ══════════ -->
+  <div class="lp-main">
+
+    <!-- ── Left: Wind turbine scene ── -->
+    <div class="lp-scene">
+      <div class="lp-scene-svg-wrap">
+      <svg class="lp-scene-svg" viewBox="0 0 780 680" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="scBg" cx="38%" cy="42%" r="70%">
+            <stop offset="0%"   stop-color="#1B3260"/>
+            <stop offset="100%" stop-color="#0A1628"/>
+          </radialGradient>
+          <filter id="scGlow">
+            <feGaussianBlur stdDeviation="3" result="cb"/>
+            <feMerge><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- Background -->
+        <rect width="780" height="680" fill="url(#scBg)"/>
+
+        <!-- Decorative rings (matching landing scan rings) -->
+        <circle cx="300" cy="330" r="230" fill="none" stroke="rgba(245,166,35,0.06)" stroke-width="1.5"/>
+        <circle cx="300" cy="330" r="170" fill="none" stroke="rgba(245,166,35,0.08)" stroke-width="1.2"/>
+        <circle cx="300" cy="330" r="110" fill="none" stroke="rgba(245,166,35,0.10)" stroke-width="1"/>
+
+        <!-- Ground shadow -->
+        <ellipse cx="290" cy="598" rx="270" ry="16" fill="rgba(0,0,0,0.30)"/>
+
+        <!-- ── Wind Turbine 1 — Large center ── -->
+        <g transform="translate(295,592)">
+          <rect x="-6" y="-330" width="12" height="330" rx="5" fill="rgba(255,255,255,0.22)"/>
+          <circle cx="0" cy="-330" r="9" fill="rgba(255,255,255,0.40)"/>
+          <!-- Spinning blades -->
+          <g style="transform-origin:0px -330px; animation:spinTurbine 9s linear infinite;">
+            <line x1="0" y1="-330" x2="0"   y2="-450" stroke="rgba(255,255,255,0.65)" stroke-width="7" stroke-linecap="round"/>
+            <line x1="0" y1="-330" x2="104" y2="-278" stroke="rgba(255,255,255,0.65)" stroke-width="7" stroke-linecap="round"/>
+            <line x1="0" y1="-330" x2="-104" y2="-278" stroke="rgba(255,255,255,0.65)" stroke-width="7" stroke-linecap="round"/>
+          </g>
+        </g>
+
+        <!-- ── Wind Turbine 2 — Small left ── -->
+        <g transform="translate(100,565)" opacity="0.72">
+          <rect x="-4" y="-210" width="8" height="210" rx="4" fill="rgba(255,255,255,0.18)"/>
+          <circle cx="0" cy="-210" r="6" fill="rgba(255,255,255,0.30)"/>
+          <g style="transform-origin:0px -210px; animation:spinTurbine 6.5s linear infinite;">
+            <line x1="0" y1="-210" x2="0"   y2="-293" stroke="rgba(255,255,255,0.50)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="0" y1="-210" x2="72"  y2="-169" stroke="rgba(255,255,255,0.50)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="0" y1="-210" x2="-72" y2="-169" stroke="rgba(255,255,255,0.50)" stroke-width="5" stroke-linecap="round"/>
+          </g>
+        </g>
+
+        <!-- ── Wind Turbine 3 — Medium right ── -->
+        <g transform="translate(520,575)" opacity="0.52">
+          <rect x="-4" y="-250" width="8" height="250" rx="4" fill="rgba(255,255,255,0.14)"/>
+          <circle cx="0" cy="-250" r="6" fill="rgba(255,255,255,0.22)"/>
+          <g style="transform-origin:0px -250px; animation:spinTurbine 11s linear infinite reverse;">
+            <line x1="0" y1="-250" x2="0"   y2="-344" stroke="rgba(255,255,255,0.38)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="0" y1="-250" x2="82"  y2="-203" stroke="rgba(255,255,255,0.38)" stroke-width="5" stroke-linecap="round"/>
+            <line x1="0" y1="-250" x2="-82" y2="-203" stroke="rgba(255,255,255,0.38)" stroke-width="5" stroke-linecap="round"/>
+          </g>
+        </g>
+
+        <!-- ── Solar panel — left ── -->
+        <g transform="translate(42,428)" opacity="0.88">
+          <rect x="0" y="0" width="155" height="96" rx="4" fill="rgba(27,50,96,0.55)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+          <line x1="0" y1="24" x2="155" y2="24" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="0" y1="48" x2="155" y2="48" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="0" y1="72" x2="155" y2="72" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="31" y1="0" x2="31" y2="96" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="62" y1="0" x2="62" y2="96" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="93" y1="0" x2="93" y2="96" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <line x1="124" y1="0" x2="124" y2="96" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+          <rect x="68" y="96" width="8" height="62" rx="3" fill="rgba(255,255,255,0.20)"/>
+          <rect x="28" y="150" width="92" height="6" rx="3" fill="rgba(255,255,255,0.12)"/>
+        </g>
+
+        <!-- ── Solar panel — right ── -->
+        <g transform="translate(390,452)" opacity="0.56">
+          <rect x="0" y="0" width="116" height="73" rx="3" fill="rgba(27,50,96,0.45)" stroke="rgba(255,255,255,0.16)" stroke-width="1.2"/>
+          <line x1="0" y1="18" x2="116" y2="18" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <line x1="0" y1="37" x2="116" y2="37" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <line x1="0" y1="55" x2="116" y2="55" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <line x1="29" y1="0" x2="29" y2="73" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <line x1="58" y1="0" x2="58" y2="73" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <line x1="87" y1="0" x2="87" y2="73" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+          <rect x="50" y="73" width="8" height="50" rx="3" fill="rgba(255,255,255,0.16)"/>
+        </g>
+
+        <!-- ═══════════════════════════════════════════════
+             POLICE OFFICER 1 — On ladder, waving
+             (REDESIGNED: peaked cap, large eyes, animations)
+             ═══════════════════════════════════════════════ -->
+        <g transform="translate(308,435)">
+          <!-- Ladder rails -->
+          <rect x="3"  y="-18" width="3.5" height="138" rx="1.8" fill="rgba(255,255,255,0.28)"/>
+          <rect x="25" y="-18" width="3.5" height="138" rx="1.8" fill="rgba(255,255,255,0.28)"/>
+          <!-- Ladder rungs -->
+          <rect x="3" y="10"  width="25" height="3.5" rx="1.8" fill="rgba(255,255,255,0.18)"/>
+          <rect x="3" y="38"  width="25" height="3.5" rx="1.8" fill="rgba(255,255,255,0.18)"/>
+          <rect x="3" y="66"  width="25" height="3.5" rx="1.8" fill="rgba(255,255,255,0.18)"/>
+          <rect x="3" y="94"  width="25" height="3.5" rx="1.8" fill="rgba(255,255,255,0.18)"/>
+          <rect x="3" y="115" width="25" height="3.5" rx="1.8" fill="rgba(255,255,255,0.18)"/>
+
+          <!-- ── Legs / Khaki trousers ── -->
+          <rect x="-1" y="20" width="8"  height="28" rx="3.5" fill="#C8A870"/>
+          <rect x="9"  y="20" width="8"  height="28" rx="3.5" fill="#C8A870"/>
+          <!-- Shoes (maroon) -->
+          <ellipse cx="3"  cy="50" rx="5.5" ry="3" fill="#7B1C1C"/>
+          <ellipse cx="13" cy="50" rx="5.5" ry="3" fill="#7B1C1C"/>
+
+          <!-- ── Torso — Khaki shirt ── -->
+          <rect x="-7" y="-6" width="22" height="28" rx="5" fill="#C8A870"/>
+          <!-- Shirt shadow/depth -->
+          <rect x="-7" y="-6" width="22" height="28" rx="5" fill="rgba(0,0,0,0.08)"/>
+          <!-- Belt -->
+          <rect x="-7" y="17" width="22" height="4.5" rx="2" fill="#8B0000"/>
+          <!-- Belt buckle -->
+          <rect x="2" y="16.5" width="6" height="5.5" rx="1" fill="rgba(210,210,210,0.92)"/>
+          <rect x="3.5" y="18" width="3" height="2.5" rx="0.5" fill="rgba(150,150,150,0.80)"/>
+          <!-- Epaulettes -->
+          <rect x="-11" y="-4" width="8"  height="3.5" rx="1.5" fill="#9E7940"/>
+          <rect x="11"  y="-4" width="8"  height="3.5" rx="1.5" fill="#9E7940"/>
+          <!-- Star on epaulette -->
+          <circle cx="-7" cy="-2.5" r="1" fill="#F5A623"/>
+          <circle cx="15" cy="-2.5" r="1" fill="#F5A623"/>
+          <!-- Shirt pockets -->
+          <rect x="-5" y="2" width="6" height="6" rx="1.5" fill="#B8934A" opacity="0.80"/>
+          <rect x="7"  y="2" width="6" height="6" rx="1.5" fill="#B8934A" opacity="0.80"/>
+          <!-- Pocket flaps -->
+          <line x1="-5" y1="5" x2="1" y2="5" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <line x1="7"  y1="5" x2="13" y2="5" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <!-- Buttons down centre -->
+          <circle cx="4" cy="-2"  r="1.2" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="4" cy="4"   r="1.2" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="4" cy="10"  r="1.2" fill="rgba(255,255,255,0.75)"/>
+          <!-- Lanyard -->
+          <path d="M4,-4 Q2,3 0,10" stroke="#111" stroke-width="1.2" fill="none" opacity="0.65"/>
+          <!-- Badge / shield on chest -->
+          <path d="M-2,0 L2,-2 L6,0 L6,5 Q4,7 2,8 Q0,7 -2,5 Z" fill="#F5A623" opacity="0.85"/>
+
+          <!-- ── Extended arm (right) ── -->
+          <!-- Upper arm -->
+          <rect x="15" y="-2" width="14" height="7" rx="3.5" fill="#C8A870" transform="rotate(-20,15,0)"/>
+          <!-- Forearm -->
+          <rect x="27" y="-8" width="18" height="6" rx="3" fill="#D4956A" transform="rotate(-15,27,-5)"/>
+          <!-- Hand -->
+          <circle cx="44" cy="-10" r="4" fill="#D4956A"/>
+
+          <!-- ── Head ── -->
+          <!-- Neck -->
+          <rect x="1" y="-14" width="6" height="8" rx="2" fill="#D4956A"/>
+          <!-- Face (skin) -->
+          <circle cx="4" cy="-24" r="12" fill="#D4956A"/>
+          <!-- Hair/ear -->
+          <ellipse cx="-7" cy="-23" rx="3" ry="4" fill="#C4855A"/>
+          <ellipse cx="15" cy="-23" rx="3" ry="4" fill="#C4855A"/>
+          <!-- Beret (dark, covers top of head) -->
+          <path d="M-8,-28 Q4,-42 16,-30 Q14,-20 4,-21 Q-6,-20 -8,-28 Z" fill="#1C1C2E"/>
+          <!-- Beret rim band -->
+          <rect x="-9" y="-30" width="26" height="4" rx="2" fill="#111122"/>
+          <!-- Cap visor/peak (distinguishes cap from hood) -->
+          <path d="M-11,-28 Q4,-22 19,-28 Q17,-26 4,-27 Q-9,-26 -11,-28 Z" fill="#0a0a1e"/>
+          <!-- Beret badge (gold star) -->
+          <circle cx="7" cy="-33" r="3.5" fill="#F5A623"/>
+          <circle cx="7" cy="-33" r="1.5" fill="rgba(255,255,255,0.65)"/>
+          <!-- Eyes (white sclera + dark iris for a natural look) -->
+          <ellipse cx="1"  cy="-23" rx="2.8" ry="2.2" fill="#FFFFFF"/>
+          <ellipse cx="8"  cy="-23" rx="2.8" ry="2.2" fill="#FFFFFF"/>
+          <circle  cx="1"  cy="-23" r="1.4" fill="#3D2010"/>
+          <circle  cx="8"  cy="-23" r="1.4" fill="#3D2010"/>
+          <circle  cx="1.5" cy="-23.4" r="0.55" fill="#fff"/>
+          <circle  cx="8.5" cy="-23.4" r="0.55" fill="#fff"/>
+          <!-- Eyebrows -->
+          <path d="M-0.5,-26 Q1.5,-27.5 3.5,-26" stroke="#4A2C18" stroke-width="1" fill="none" stroke-linecap="round"/>
+          <path d="M6.5,-26 Q8,-27.5 10,-26" stroke="#4A2C18" stroke-width="1" fill="none" stroke-linecap="round"/>
+          <!-- Nose -->
+          <path d="M3.5,-20 Q4.5,-18 5.5,-20" stroke="#C4855A" stroke-width="0.8" fill="none"/>
+          <!-- Mouth (friendly smile) -->
+          <path d="M1,-17.5 Q4.5,-14.5 8,-17.5" stroke="#A0654A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <path d="M1.2,-17.5 Q4.5,-15.5 7.8,-17.5 Q4.5,-14.5 1.2,-17.5 Z" fill="#C07B60" opacity="0.45"/>
+        </g>
+
+        <!-- ═══════════════════════════════════════════════
+             POLICE OFFICER 2 — Standing, inspecting tablet
+             ═══════════════════════════════════════════════ -->
+        <g transform="translate(450,478)">
+          <!-- ── Legs / Trousers ── -->
+          <rect x="2"  y="0" width="11" height="36" rx="4" fill="#C8A870"/>
+          <rect x="15" y="0" width="11" height="36" rx="4" fill="#C8A870"/>
+          <!-- Crease line -->
+          <line x1="7"  y1="0" x2="7"  y2="34" stroke="rgba(0,0,0,0.10)" stroke-width="0.8"/>
+          <line x1="20" y1="0" x2="20" y2="34" stroke="rgba(0,0,0,0.10)" stroke-width="0.8"/>
+          <!-- Shoes -->
+          <ellipse cx="8"  cy="37" rx="8"  ry="4" fill="#7B1C1C"/>
+          <ellipse cx="21" cy="37" rx="8"  ry="4" fill="#7B1C1C"/>
+          <ellipse cx="8"  cy="36" rx="5"  ry="2" fill="#9B2C2C" opacity="0.50"/>
+          <ellipse cx="21" cy="36" rx="5"  ry="2" fill="#9B2C2C" opacity="0.50"/>
+
+          <!-- ── Torso ── -->
+          <rect x="-2" y="-46" width="32" height="48" rx="6" fill="#C8A870"/>
+          <!-- Belt -->
+          <rect x="-2" y="-2"  width="32" height="5"  rx="2" fill="#8B0000"/>
+          <!-- Belt buckle -->
+          <rect x="10" y="-3"  width="8"  height="7"  rx="1.5" fill="rgba(210,210,210,0.92)"/>
+          <rect x="12" y="-1"  width="4"  height="3.5" rx="0.5" fill="rgba(150,150,150,0.80)"/>
+          <!-- Epaulettes -->
+          <rect x="-8"  y="-44" width="11" height="4" rx="2" fill="#9E7940"/>
+          <rect x="25"  y="-44" width="11" height="4" rx="2" fill="#9E7940"/>
+          <circle cx="-2"  cy="-42" r="1.5" fill="#F5A623"/>
+          <circle cx="31"  cy="-42" r="1.5" fill="#F5A623"/>
+          <!-- Shirt pockets -->
+          <rect x="1"  y="-38" width="9" height="8" rx="2" fill="#B8934A" opacity="0.80"/>
+          <rect x="18" y="-38" width="9" height="8" rx="2" fill="#B8934A" opacity="0.80"/>
+          <line x1="1"  y1="-33" x2="10" y2="-33" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <line x1="18" y1="-33" x2="27" y2="-33" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <!-- Buttons -->
+          <circle cx="14" cy="-40" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-32" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-24" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-16" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <!-- Lanyard -->
+          <path d="M14,-44 Q12,-38 10,-28" stroke="#111" stroke-width="1.2" fill="none" opacity="0.65"/>
+          <!-- Badge on chest -->
+          <path d="M6,-28 L10,-30 L14,-28 L14,-22 Q12,-20 10,-19 Q8,-20 6,-22 Z" fill="#F5A623" opacity="0.85"/>
+
+          <!-- ── Right arm + tablet ── -->
+          <!-- Upper arm -->
+          <rect x="30" y="-40" width="8" height="20" rx="4" fill="#C8A870" transform="rotate(20,30,-30)"/>
+          <!-- Forearm -->
+          <rect x="36" y="-28" width="8" height="18" rx="4" fill="#D4956A" transform="rotate(10,36,-20)"/>
+          <!-- Tablet device -->
+          <rect x="38" y="-42" width="28" height="22" rx="4" fill="#0f2557" stroke="rgba(245,166,35,0.55)" stroke-width="1.5"/>
+          <!-- Tablet screen glow -->
+          <rect x="40" y="-40" width="24" height="18" rx="3" fill="#132240"/>
+          <!-- Screen content lines -->
+          <line x1="42" y1="-36" x2="62" y2="-36" stroke="rgba(245,166,35,0.60)" stroke-width="1.5"/>
+          <line x1="42" y1="-31" x2="60" y2="-31" stroke="rgba(245,166,35,0.45)" stroke-width="1.2"/>
+          <line x1="42" y1="-26" x2="56" y2="-26" stroke="rgba(245,166,35,0.30)" stroke-width="1.0"/>
+          <!-- Data chart bars -->
+          <rect x="43" y="-27" width="4" height="8" rx="1" fill="rgba(245,166,35,0.50)"/>
+          <rect x="49" y="-30" width="4" height="11" rx="1" fill="rgba(245,166,35,0.70)"/>
+          <rect x="55" y="-28" width="4" height="9" rx="1" fill="rgba(245,166,35,0.55)"/>
+
+          <!-- ── Left arm (down at side) ── -->
+          <rect x="-10" y="-42" width="8" height="22" rx="4" fill="#C8A870"/>
+          <circle cx="-6" cy="-18" r="4" fill="#D4956A"/>
+
+          <!-- ── Head ── -->
+          <!-- Neck -->
+          <rect x="9" y="-52" width="10" height="8" rx="3" fill="#D4956A"/>
+          <!-- Face -->
+          <circle cx="14" cy="-64" r="14" fill="#D4956A"/>
+          <!-- Ears -->
+          <ellipse cx="-1"  cy="-63" rx="3.5" ry="5" fill="#C4855A"/>
+          <ellipse cx="29"  cy="-63" rx="3.5" ry="5" fill="#C4855A"/>
+          <!-- Beret -->
+          <path d="M-2,-70 Q14,-86 30,-72 Q27,-60 14,-61 Q1,-60 -2,-70 Z" fill="#1C1C2E"/>
+          <!-- Beret rim -->
+          <rect x="-3" y="-72" width="34" height="4" rx="2" fill="#111122"/>
+          <!-- Cap visor/peak -->
+          <path d="M-5,-70 Q14,-63 33,-70 Q31,-67 14,-68 Q-3,-67 -5,-70 Z" fill="#0a0a1e"/>
+          <!-- Beret badge -->
+          <circle cx="17" cy="-76" r="4.5" fill="#F5A623"/>
+          <circle cx="17" cy="-76" r="2"   fill="rgba(255,255,255,0.65)"/>
+          <!-- Eyes (white sclera + dark iris) -->
+          <ellipse cx="9"  cy="-63" rx="3.2" ry="2.6" fill="#FFFFFF"/>
+          <ellipse cx="19" cy="-63" rx="3.2" ry="2.6" fill="#FFFFFF"/>
+          <circle  cx="9"  cy="-63" r="1.7" fill="#3D2010"/>
+          <circle  cx="19" cy="-63" r="1.7" fill="#3D2010"/>
+          <circle cx="9.7" cy="-63.5" r="0.7" fill="#fff"/>
+          <circle cx="19.7" cy="-63.5" r="0.7" fill="#fff"/>
+          <!-- Eyebrows -->
+          <path d="M7,-67 Q9,-69 12,-67"  stroke="#4A2C18" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <path d="M17,-67 Q20,-69 23,-67" stroke="#4A2C18" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <!-- Nose -->
+          <path d="M12,-59 Q14,-56 16,-59" stroke="#C4855A" stroke-width="1" fill="none"/>
+          <!-- Mouth (friendly smile) -->
+          <path d="M9,-54 Q14,-50 19,-54" stroke="#A0654A" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+          <path d="M9.5,-54 Q14,-51.5 18.5,-54 Q14,-50 9.5,-54 Z" fill="#C07B60" opacity="0.45"/>
+        </g>
+
+        <!-- ═══════════════════════════════════════════════
+             POLICE OFFICER 3 — Far left, arm raised (pointing)
+             ═══════════════════════════════════════════════ -->
+        <g transform="translate(30,498)">
+          <!-- ── Legs ── -->
+          <rect x="3"  y="0" width="10" height="32" rx="4" fill="#C8A870"/>
+          <rect x="15" y="0" width="10" height="32" rx="4" fill="#C8A870"/>
+          <!-- Crease -->
+          <line x1="8"  y1="0" x2="8"  y2="30" stroke="rgba(0,0,0,0.10)" stroke-width="0.8"/>
+          <line x1="20" y1="0" x2="20" y2="30" stroke="rgba(0,0,0,0.10)" stroke-width="0.8"/>
+          <!-- Shoes -->
+          <ellipse cx="8"  cy="34" rx="7"  ry="3.5" fill="#7B1C1C"/>
+          <ellipse cx="20" cy="34" rx="7"  ry="3.5" fill="#7B1C1C"/>
+
+          <!-- ── Torso ── -->
+          <rect x="-1" y="-42" width="30" height="44" rx="5" fill="#C8A870"/>
+          <!-- Belt -->
+          <rect x="-1" y="-2"  width="30" height="5"  rx="2" fill="#8B0000"/>
+          <!-- Belt buckle -->
+          <rect x="9"  y="-3"  width="7"  height="7"  rx="1.5" fill="rgba(210,210,210,0.92)"/>
+          <rect x="10.5" y="-1.5" width="4" height="4" rx="0.5" fill="rgba(150,150,150,0.80)"/>
+          <!-- Epaulettes -->
+          <rect x="-8"  y="-40" width="10" height="4" rx="2" fill="#9E7940"/>
+          <rect x="26"  y="-40" width="10" height="4" rx="2" fill="#9E7940"/>
+          <circle cx="-3"  cy="-38" r="1.5" fill="#F5A623"/>
+          <circle cx="31"  cy="-38" r="1.5" fill="#F5A623"/>
+          <!-- Pockets -->
+          <rect x="2"  y="-34" width="8" height="7" rx="2" fill="#B8934A" opacity="0.80"/>
+          <rect x="18" y="-34" width="8" height="7" rx="2" fill="#B8934A" opacity="0.80"/>
+          <line x1="2"  y1="-30" x2="10" y2="-30" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <line x1="18" y1="-30" x2="26" y2="-30" stroke="rgba(0,0,0,0.15)" stroke-width="0.8"/>
+          <!-- Buttons -->
+          <circle cx="14" cy="-36" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-28" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-20" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <circle cx="14" cy="-12" r="1.5" fill="rgba(255,255,255,0.75)"/>
+          <!-- Lanyard -->
+          <path d="M14,-40 Q12,-34 10,-24" stroke="#111" stroke-width="1.2" fill="none" opacity="0.65"/>
+          <!-- Badge -->
+          <path d="M6,-24 L10,-26 L14,-24 L14,-18 Q12,-16 10,-15 Q8,-16 6,-18 Z" fill="#F5A623" opacity="0.85"/>
+
+          <!-- ── Left arm raised + pointing ── -->
+          <!-- Upper arm angled up -->
+          <rect x="-12" y="-42" width="8" height="22" rx="4" fill="#C8A870" transform="rotate(-50,-8,-32)"/>
+          <!-- Forearm extended -->
+          <rect x="-26" y="-62" width="8" height="20" rx="4" fill="#D4956A" transform="rotate(-40,-22,-52)"/>
+          <!-- Hand pointing -->
+          <circle cx="-38" cy="-72" r="5" fill="#D4956A"/>
+          <!-- Index finger pointing -->
+          <rect x="-44" y="-76" width="4" height="12" rx="2" fill="#D4956A" transform="rotate(-40,-42,-70)"/>
+
+          <!-- ── Right arm down ── -->
+          <rect x="28" y="-38" width="8" height="22" rx="4" fill="#C8A870"/>
+          <circle cx="32" cy="-14" r="4.5" fill="#D4956A"/>
+
+          <!-- ── Head ── -->
+          <!-- Neck -->
+          <rect x="9" y="-48" width="10" height="8" rx="3" fill="#D4956A"/>
+          <!-- Face -->
+          <circle cx="14" cy="-60" r="13" fill="#D4956A"/>
+          <!-- Ears -->
+          <ellipse cx="1"  cy="-59" rx="3" ry="4.5" fill="#C4855A"/>
+          <ellipse cx="27" cy="-59" rx="3" ry="4.5" fill="#C4855A"/>
+          <!-- Beret -->
+          <path d="M1,-66 Q14,-80 27,-68 Q25,-58 14,-59 Q3,-58 1,-66 Z" fill="#1C1C2E"/>
+          <!-- Beret rim -->
+          <rect x="0" y="-68" width="28" height="4" rx="2" fill="#111122"/>
+          <!-- Cap visor/peak -->
+          <path d="M-2,-66 Q14,-60 30,-66 Q28,-63 14,-64 Q0,-63 -2,-66 Z" fill="#0a0a1e"/>
+          <!-- Beret badge -->
+          <circle cx="16" cy="-72" r="4" fill="#F5A623"/>
+          <circle cx="16" cy="-72" r="1.8" fill="rgba(255,255,255,0.65)"/>
+          <!-- Eyes (white sclera + dark iris) -->
+          <ellipse cx="9"  cy="-59" rx="3.0" ry="2.4" fill="#FFFFFF"/>
+          <ellipse cx="19" cy="-59" rx="3.0" ry="2.4" fill="#FFFFFF"/>
+          <circle  cx="9"  cy="-59" r="1.6" fill="#3D2010"/>
+          <circle  cx="19" cy="-59" r="1.6" fill="#3D2010"/>
+          <circle cx="9.6" cy="-59.4" r="0.65" fill="#fff"/>
+          <circle cx="19.6" cy="-59.4" r="0.65" fill="#fff"/>
+          <!-- Eyebrows -->
+          <path d="M7,-63 Q9,-65 12,-63"   stroke="#4A2C18" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+          <path d="M16,-63 Q19,-65 22,-63" stroke="#4A2C18" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+          <!-- Nose -->
+          <path d="M12,-55 Q14,-53 16,-55" stroke="#C4855A" stroke-width="0.9" fill="none"/>
+          <!-- Mouth (confident smile) -->
+          <path d="M9,-50 Q14,-47 19,-50" stroke="#A0654A" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+          <path d="M9.5,-50 Q14,-48 18.5,-50 Q14,-47 9.5,-50 Z" fill="#C07B60" opacity="0.45"/>
+        </g>
+
+        <!-- ── Energy arc dashes ── -->
+        <path d="M 148 416 Q 210 370 295 390" stroke="rgba(245,166,35,0.20)" stroke-width="1.5" fill="none" stroke-dasharray="4 6"/>
+        <path d="M 295 390 Q 385 358 458 486" stroke="rgba(245,166,35,0.15)" stroke-width="1.5" fill="none" stroke-dasharray="4 6"/>
+
+        <!-- ── Floating glowing dots (gold — matches landing particles) ── -->
+        <circle cx="190" cy="175" r="4" fill="rgba(245,166,35,0.70)" filter="url(#scGlow)">
+          <animate attributeName="cy" values="175;160;175" dur="3s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="480" cy="215" r="3" fill="rgba(245,166,35,0.55)" filter="url(#scGlow)">
+          <animate attributeName="cy" values="215;202;215" dur="4.2s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="570" cy="310" r="3.5" fill="rgba(136,153,176,0.60)" filter="url(#scGlow)">
+          <animate attributeName="cy" values="310;298;310" dur="3.8s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="85" cy="255" r="2.5" fill="rgba(245,166,35,0.45)" filter="url(#scGlow)">
+          <animate attributeName="cy" values="255;245;255" dur="5s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="660" cy="180" r="3" fill="rgba(245,166,35,0.35)" filter="url(#scGlow)">
+          <animate attributeName="cy" values="180;168;180" dur="4.5s" repeatCount="indefinite"/>
+        </circle>
+
+        <!-- ── Subtle clouds ── -->
+        <g opacity="0.12">
+          <ellipse cx="430" cy="118" rx="58" ry="20" fill="#fff"/>
+          <ellipse cx="402" cy="126" rx="38" ry="17" fill="#fff"/>
+          <ellipse cx="468" cy="126" rx="34" ry="15" fill="#fff"/>
+        </g>
+        <g opacity="0.07">
+          <ellipse cx="155" cy="88" rx="44" ry="16" fill="#fff"/>
+          <ellipse cx="130" cy="96" rx="30" ry="13" fill="#fff"/>
+          <ellipse cx="188" cy="96" rx="28" ry="12" fill="#fff"/>
+        </g>
+
+        <!-- ══════════════════════════════════════
+             APTRANSCO POWER TRANSMISSION TOWERS
+             ══════════════════════════════════════ -->
+
+        <!-- ── Tower 1 — tall, center-left ── -->
+        <g transform="translate(178,580)" opacity="0.82">
+          <!-- Main vertical legs -->
+          <line x1="-18" y1="0" x2="-6" y2="-260" stroke="rgba(245,166,35,0.70)" stroke-width="2.2"/>
+          <line x1="18"  y1="0" x2="6"  y2="-260" stroke="rgba(245,166,35,0.70)" stroke-width="2.2"/>
+          <!-- Cross braces -->
+          <line x1="-18" y1="0"    x2="6"   y2="-260" stroke="rgba(245,166,35,0.25)" stroke-width="1"/>
+          <line x1="18"  y1="0"    x2="-6"  y2="-260" stroke="rgba(245,166,35,0.25)" stroke-width="1"/>
+          <!-- Horizontal cross-arms at intervals -->
+          <line x1="-16" y1="-52"  x2="16"  y2="-52"  stroke="rgba(245,166,35,0.55)" stroke-width="1.6"/>
+          <line x1="-14" y1="-104" x2="14"  y2="-104" stroke="rgba(245,166,35,0.55)" stroke-width="1.6"/>
+          <line x1="-12" y1="-156" x2="12"  y2="-156" stroke="rgba(245,166,35,0.55)" stroke-width="1.6"/>
+          <line x1="-10" y1="-205" x2="10"  y2="-205" stroke="rgba(245,166,35,0.55)" stroke-width="1.6"/>
+          <!-- Top cross-arm (power line arm) -->
+          <line x1="-38" y1="-248" x2="38"  y2="-248" stroke="rgba(245,166,35,0.80)" stroke-width="2.0"/>
+          <line x1="-28" y1="-238" x2="28"  y2="-238" stroke="rgba(245,166,35,0.65)" stroke-width="1.6"/>
+          <!-- Diagonal lattice fillers -->
+          <line x1="-16" y1="-52"  x2="-14" y2="-104" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <line x1="16"  y1="-52"  x2="14"  y2="-104" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <line x1="-6"  y1="-52"  x2="-4"  y2="-104" stroke="rgba(245,166,35,0.15)" stroke-width="0.8"/>
+          <line x1="6"   y1="-52"  x2="4"   y2="-104" stroke="rgba(245,166,35,0.15)" stroke-width="0.8"/>
+          <line x1="-14" y1="-104" x2="-12" y2="-156" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <line x1="14"  y1="-104" x2="12"  y2="-156" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <line x1="-12" y1="-156" x2="-10" y2="-205" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <line x1="12"  y1="-156" x2="10"  y2="-205" stroke="rgba(245,166,35,0.20)" stroke-width="1"/>
+          <!-- Base feet -->
+          <line x1="-18" y1="0" x2="-28" y2="10"  stroke="rgba(245,166,35,0.50)" stroke-width="2"/>
+          <line x1="18"  y1="0" x2="28"  y2="10"  stroke="rgba(245,166,35,0.50)" stroke-width="2"/>
+          <!-- Lightning bolt (APTRANSCO emblem) -->
+          <path d="M4,-230 L-2,-218 L2,-218 L-4,-205" stroke="#F5A623" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.90"/>
+          <!-- Insulator chains -->
+          <line x1="-38" y1="-248" x2="-38" y2="-240" stroke="rgba(255,255,255,0.30)" stroke-width="1.5"/>
+          <line x1="38"  y1="-248" x2="38"  y2="-240" stroke="rgba(255,255,255,0.30)" stroke-width="1.5"/>
+          <line x1="-28" y1="-238" x2="-28" y2="-232" stroke="rgba(255,255,255,0.25)" stroke-width="1.2"/>
+          <line x1="28"  y1="-238" x2="28"  y2="-232" stroke="rgba(255,255,255,0.25)" stroke-width="1.2"/>
+        </g>
+
+        <!-- ── Tower 2 — shorter, far right ── -->
+        <g transform="translate(680,570)" opacity="0.55">
+          <line x1="-14" y1="0" x2="-5"  y2="-195" stroke="rgba(245,166,35,0.60)" stroke-width="1.8"/>
+          <line x1="14"  y1="0" x2="5"   y2="-195" stroke="rgba(245,166,35,0.60)" stroke-width="1.8"/>
+          <line x1="-14" y1="0" x2="5"   y2="-195" stroke="rgba(245,166,35,0.18)" stroke-width="0.9"/>
+          <line x1="14"  y1="0" x2="-5"  y2="-195" stroke="rgba(245,166,35,0.18)" stroke-width="0.9"/>
+          <line x1="-12" y1="-40"  x2="12"  y2="-40"  stroke="rgba(245,166,35,0.45)" stroke-width="1.4"/>
+          <line x1="-10" y1="-80"  x2="10"  y2="-80"  stroke="rgba(245,166,35,0.45)" stroke-width="1.4"/>
+          <line x1="-8"  y1="-120" x2="8"   y2="-120" stroke="rgba(245,166,35,0.45)" stroke-width="1.4"/>
+          <line x1="-7"  y1="-158" x2="7"   y2="-158" stroke="rgba(245,166,35,0.45)" stroke-width="1.4"/>
+          <!-- Top arm -->
+          <line x1="-28" y1="-186" x2="28"  y2="-186" stroke="rgba(245,166,35,0.68)" stroke-width="1.8"/>
+          <line x1="-20" y1="-178" x2="20"  y2="-178" stroke="rgba(245,166,35,0.50)" stroke-width="1.4"/>
+          <!-- Lightning bolt -->
+          <path d="M3,-172 L-1.5,-162 L1.5,-162 L-3,-152" stroke="#F5A623" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+          <!-- Base -->
+          <line x1="-14" y1="0" x2="-22" y2="8" stroke="rgba(245,166,35,0.45)" stroke-width="1.8"/>
+          <line x1="14"  y1="0" x2="22"  y2="8" stroke="rgba(245,166,35,0.45)" stroke-width="1.8"/>
+        </g>
+
+        <!-- ── Tower 3 — far left background (small/faded) ── -->
+        <g transform="translate(30,560)" opacity="0.30">
+          <line x1="-10" y1="0" x2="-3"  y2="-150" stroke="rgba(245,166,35,0.70)" stroke-width="1.5"/>
+          <line x1="10"  y1="0" x2="3"   y2="-150" stroke="rgba(245,166,35,0.70)" stroke-width="1.5"/>
+          <line x1="-10" y1="0" x2="3"   y2="-150" stroke="rgba(245,166,35,0.20)" stroke-width="0.8"/>
+          <line x1="10"  y1="0" x2="-3"  y2="-150" stroke="rgba(245,166,35,0.20)" stroke-width="0.8"/>
+          <line x1="-9"  y1="-38"  x2="9"   y2="-38"  stroke="rgba(245,166,35,0.50)" stroke-width="1.2"/>
+          <line x1="-7"  y1="-76"  x2="7"   y2="-76"  stroke="rgba(245,166,35,0.50)" stroke-width="1.2"/>
+          <line x1="-5"  y1="-114" x2="5"   y2="-114" stroke="rgba(245,166,35,0.50)" stroke-width="1.2"/>
+          <line x1="-20" y1="-142" x2="20"  y2="-142" stroke="rgba(245,166,35,0.60)" stroke-width="1.5"/>
+          <line x1="-10" y1="0" x2="-16" y2="6"  stroke="rgba(245,166,35,0.50)" stroke-width="1.5"/>
+          <line x1="10"  y1="0" x2="16"  y2="6"  stroke="rgba(245,166,35,0.50)" stroke-width="1.5"/>
+        </g>
+
+        <!-- ── Power lines connecting towers ── -->
+        <!-- Tower1 left arm → Tower3 right arm -->
+        <path d="M 140,332 Q 100,345 46,418" stroke="rgba(245,166,35,0.22)" stroke-width="1.2" fill="none"/>
+        <!-- Tower1 right arm → Tower2 left arm -->
+        <path d="M 216,332 Q 420,310 652,384" stroke="rgba(245,166,35,0.18)" stroke-width="1.2" fill="none"/>
+        <!-- Secondary wire (sag) -->
+        <path d="M 150,342 Q 420,320 652,392" stroke="rgba(245,166,35,0.12)" stroke-width="1" fill="none"/>
+
+        <!-- ── Electric spark animations on power lines ── -->
+        <circle r="2.5" fill="#F5A623" opacity="0.85" filter="url(#scGlow)">
+          <animateMotion dur="3.5s" repeatCount="indefinite">
+            <mpath href="#wire1"/>
+          </animateMotion>
+        </circle>
+        <circle r="2" fill="#FFD580" opacity="0.70" filter="url(#scGlow)">
+          <animateMotion dur="5s" repeatCount="indefinite" begin="1.2s">
+            <mpath href="#wire2"/>
+          </animateMotion>
+        </circle>
+
+        <!-- Named paths for animateMotion -->
+        <defs>
+          <path id="wire1" d="M 140,332 Q 420,310 652,384"/>
+          <path id="wire2" d="M 216,332 Q 100,345 46,418"/>
+        </defs>
+      </svg>
+
+      </div><!-- /lp-scene-svg-wrap -->
+    </div>
+
+    <!-- ── Right: Login card ── -->
+    <div class="lp-card-wrap">
+      <div class="lp-card">
+
+        <h2 class="lp-card-title">Welcome <span class="gold">Back...</span></h2>
+        <p class="lp-card-sub">Sign in to your Nigaa account to continue</p>
+
+        <!-- Tabs -->
+        <div class="lp-tabs" role="tablist" aria-label="Login options">
+          <button type="button" class="lp-tab active" data-login-tab="secure"
+                  onclick="showLoginTab('secure')" data-i18n="login.tab_secure">Secure Login</button>
+          <button type="button" class="lp-tab" data-login-tab="recovery"
+                  onclick="showLoginTab('recovery')" data-i18n="login.tab_recovery">Password Recovery</button>
+        </div>
+
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% set ns = namespace(seen=[]) %}
+        {% for category, message in messages %}
+        {% set key = category ~ '|' ~ message %}
+        {% if key not in ns.seen %}
+        <div class="lp-alert lp-alert-{{ category }}">
+          <span>{{ message }}</span>
+        </div>
+        {% set ns.seen = ns.seen + [key] %}
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <!-- ── OTP Form ── -->
+        {% if otp_required %}
+        <form method="POST" action="{{ url_for('login') }}" data-login-panel="secure">
+          <input type="hidden" name="login_action" value="verify_otp">
+          <div class="lp-field">
+            <label data-i18n="login.mobile_verification">Mobile Verification</label>
+            <div class="lp-input-wrap">
+              <input type="text" value="{{ otp_mobile_masked }}" readonly>
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.67A2 2 0 012 .9h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.91 8.27a16 16 0 006.29 6.29l1.63-1.63a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+              </span>
+            </div>
+            <div class="lp-field-help" data-i18n="login.otp_help">Enter the OTP sent to your registered mobile.</div>
+          </div>
+          <div class="lp-field">
+            <label for="otp_code" data-i18n="login.otp">OTP Code</label>
+            <div class="lp-input-wrap">
+              <input type="text" id="otp_code" name="otp_code" required inputmode="numeric"
+                     pattern="[0-9]+" maxlength="10" placeholder="Enter OTP"
+                     data-i18n-placeholder="login.ph_otp">
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M11 11V7a1 1 0 012 0v4"/></svg>
+              </span>
+            </div>
+          </div>
+          <button type="submit" class="lp-btn-primary" data-i18n="login.verify_otp">
+            Verify OTP
+            <span class="lp-btn-arrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+          </button>
+          <div class="lp-btn-row">
+            <button type="submit" name="login_action" value="resend_otp"
+                    class="lp-btn-outline" data-i18n="login.resend_otp">Resend OTP</button>
+            <a href="{{ url_for('login', reset_otp='1') }}"
+               class="lp-btn-outline" data-i18n="login.change_login">Change Login</a>
+          </div>
+        </form>
+
+        <!-- ── Secure Login Form ── -->
+        {% else %}
+        <form method="POST" action="{{ url_for('login') }}" data-login-panel="secure">
+          <input type="hidden" name="login_action" value="credentials">
+          <div class="lp-field">
+            <label for="username" data-i18n="login.username">Username</label>
+            <div class="lp-input-wrap">
+              <input type="text" id="username" name="username" required autofocus
+                     placeholder="Enter your username"
+                     data-i18n-placeholder="login.ph_username"
+                     value="{{ request.form.get('username', '') }}">
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label for="password" data-i18n="login.password">Password</label>
+            <div class="lp-input-wrap">
+              <input type="password" id="lp-pwd" name="password" required
+                     placeholder="Enter your password"
+                     data-i18n-placeholder="login.ph_password">
+              <span class="lp-input-icon clickable" onclick="lpTogglePwd()" title="Show/hide password">
+                <svg id="lp-eye" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label for="captcha_answer" data-i18n="login.security_verification">Security Check</label>
+            <div class="lp-captcha-row">
+              <div class="lp-captcha-box" aria-live="polite">
+                <span class="lp-captcha-text">{{ captcha_a }} + {{ captcha_b }} = ?</span>
+                <a href="{{ url_for('login', refresh_captcha='1') }}"
+                   class="lp-captcha-refresh" title="Refresh captcha" aria-label="Refresh captcha">&#8635;</a>
+              </div>
+              <div class="lp-input-wrap">
+                <input type="text" id="captcha_answer" name="captcha_answer"
+                       required inputmode="numeric" pattern="[0-9]+"
+                       placeholder="Answer" data-i18n-placeholder="login.ph_captcha">
+              </div>
+            </div>
+          </div>
+
+          <p class="lp-terms">
+            By signing in you agree to our
+            <a href="#" data-i18n="login.terms_link">Terms &amp; Conditions</a>
+          </p>
+
+          <button type="submit" class="lp-btn-primary">
+            <span data-i18n="login.verify_signin">Verify &amp; Sign In</span>
+            <span class="lp-btn-arrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+          </button>
+          <div class="lp-secondary-row">
+            <a href="#" class="lp-link" onclick="showLoginTab('recovery');return false;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <span data-i18n="login.forgot_password">Forgot Password?</span>
+            </a>
+          </div>
+        </form>
+        {% endif %}
+
+        <!-- ── Password Recovery Form ── -->
+        <form method="POST" action="{{ url_for('request_recovery') }}"
+              data-login-panel="recovery" style="display:none;">
+          <div class="lp-field">
+            <label for="recovery_username" data-i18n="login.username">Username</label>
+            <div class="lp-input-wrap">
+              <input type="text" id="recovery_username" name="recovery_username"
+                     placeholder="Enter your username" data-i18n-placeholder="login.ph_username">
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label for="recovery_password" data-i18n="login.new_password">New Password</label>
+            <div class="lp-input-wrap">
+              <input type="password" id="recovery_password" name="recovery_password"
+                     minlength="6" placeholder="Enter new password" data-i18n-placeholder="login.ph_new_password">
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M11 11V7a1 1 0 012 0v4"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="lp-field">
+            <label for="recovery_confirm_password" data-i18n="login.confirm_new_password">Confirm Password</label>
+            <div class="lp-input-wrap">
+              <input type="password" id="recovery_confirm_password"
+                     name="recovery_confirm_password" minlength="6"
+                     placeholder="Confirm new password" data-i18n-placeholder="login.ph_confirm_new_password">
+              <span class="lp-input-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M11 11V7a1 1 0 012 0v4"/></svg>
+              </span>
+            </div>
+          </div>
+          <button type="submit" class="lp-btn-primary" data-i18n="login.submit_recovery">
+            Submit Recovery Request
+            <span class="lp-btn-arrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+          </button>
+          <div class="lp-secondary-row">
+            <a href="#" class="lp-link" onclick="showLoginTab('secure');return false;">
+              ← <span data-i18n="login.back_to_login">Back to Login</span>
+            </a>
+          </div>
+        </form>
+
+        <div class="lp-divider"></div>
+        <div class="lp-card-footer">
+          <p data-i18n="login.footer_wing">Vigilance Wing · {{ brand_name }} · © 2026</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /lp-main -->
+</div><!-- /lp -->
+
+<script>
+/* ── Particles (same as landing) ── */
+(function () {
+  var container = document.getElementById('lpParticles');
+  if (!container) return;
+  for (var i = 0; i < 22; i++) {
+    var p = document.createElement('div');
+    p.className = 'lp-particle';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDelay = (Math.random() * 6) + 's';
+    p.style.animationDuration = (5 + Math.random() * 5) + 's';
+    p.style.width = p.style.height = (2 + Math.random() * 2) + 'px';
+    container.appendChild(p);
+  }
+})();
+
+/* ── Login tab switcher ── */
+function showLoginTab(tabName) {
+  document.querySelectorAll('.lp-tab').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.loginTab === tabName);
+  });
+  document.querySelectorAll('[data-login-panel]').forEach(function(panel) {
+    panel.style.display = panel.dataset.loginPanel === tabName ? '' : 'none';
+  });
+}
+
+/* ── Password visibility ── */
+function lpTogglePwd() {
+  var inp = document.getElementById('lp-pwd');
+  var eye = document.getElementById('lp-eye');
+  if (!inp) return;
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    eye.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+  } else {
+    inp.type = 'password';
+    eye.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" fill="none"/>';
+  }
+}
+
+/* ── Theme toggle (dedicated button, no conflict with base.css) ── */
+document.getElementById('lpThemeToggle').addEventListener('click', function () {
+  var html = document.documentElement;
+  var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('ui_theme_mode', next);
+});
+
+/* ── Language pills (sync with base app.js handler if loaded) ── */
+document.querySelectorAll('.lp-lang-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.lp-lang-btn').forEach(function(b) { b.classList.remove('lp-lang-active'); });
+    btn.classList.add('lp-lang-active');
+    // Trigger the global lang-pill click if app.js is handling it
+    btn.dispatchEvent(new MouseEvent('click', {bubbles: false}));
+  });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  showLoginTab('secure');
+  // Set active lang pill
+  var savedLang = localStorage.getItem('ui_lang') || 'en';
+  document.querySelectorAll('.lp-lang-btn').forEach(function(b) {
+    b.classList.toggle('lp-lang-active', b.dataset.lang === savedLang);
+  });
 });
 </script>
 {% endblock %}

@@ -1,22 +1,103 @@
 {% extends "base.html" %}
-{% block title %}Help Resources - Petition Tracker{% endblock %}
-{% block page_title %}Help Resources{% endblock %}
+{% block title %}Help - Petition Tracker{% endblock %}
+{% block page_title %}Help{% endblock %}
 
 {% block content %}
-<div class="card form-mgmt-hero">
+
+{# ── Browse section (all users) ─────────────────────────────────────────── #}
+{% set section_meta = {
+    'manual':    {'title': 'User Manuals',  'icon': 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8', 'empty': 'No user manuals available yet.'},
+    'flowchart': {'title': 'Flowcharts',    'icon': 'M3 3h18v18H3z M8 8h8 M8 12h8 M8 16h5',                                                                'empty': 'No flowcharts available yet.'},
+    'video':     {'title': 'Videos',        'icon': 'M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58A2.78 2.78 0 0 0 3.4 19.6C5.12 20 12 20 12 20s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-1.95A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z M9.75 15.02l6.25-3.02-6.25-3.02v6.04z', 'empty': 'No videos available yet.'}
+} %}
+
+{% for section_key, meta in section_meta.items() %}
+{% set items = grouped_resources.get(section_key, []) %}
+<div class="card">
     <div class="card-header">
-        <h2>Help Resource Management</h2>
+        <h3>{{ meta.title }}</h3>
+        <span class="form-mgmt-count">{{ items|length }} items</span>
     </div>
-    <div class="form-mgmt-hero-body">
-        <p>Upload user manuals, flowcharts, and training videos here. All active resources appear in every user login under the profile menu Help Center.</p>
+    <div class="form-mgmt-grid">
+        {% for resource in items %}
+        <article class="form-mgmt-field-card">
+            <div class="form-mgmt-field-head">
+                <strong>{{ resource.title }}</strong>
+                <span class="status-badge status-open">{{ resource.resource_type|replace('_', ' ')|title }}</span>
+            </div>
+            <div class="form-mgmt-field-body">
+                {% if resource.preview_kind == 'pdf' %}
+                <div class="form-group full-width">
+                    <label>Preview</label>
+                    <iframe
+                        src="{{ resource.view_url }}"
+                        title="{{ resource.title }}"
+                        style="width:100%;height:420px;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:#fff;"
+                    ></iframe>
+                </div>
+                {% elif resource.preview_kind == 'image' %}
+                <div class="form-group full-width">
+                    <label>Preview</label>
+                    <img
+                        src="{{ resource.view_url }}"
+                        alt="{{ resource.title }}"
+                        style="max-width:100%;max-height:420px;display:block;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:#fff;object-fit:contain;"
+                    >
+                </div>
+                {% elif resource.preview_kind == 'video' %}
+                <div class="form-group full-width">
+                    <label>Preview</label>
+                    <video
+                        controls
+                        preload="metadata"
+                        style="width:100%;max-height:420px;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:#000;"
+                    >
+                        <source src="{{ resource.view_url }}">
+                        Your browser does not support inline video preview.
+                    </video>
+                </div>
+                {% endif %}
+                <div class="form-group full-width">
+                    <label>Source</label>
+                    <div>{{ 'Uploaded File' if resource.storage_kind == 'upload' else 'External Link' }}</div>
+                </div>
+                {% if resource.uploaded_by_name %}
+                <div class="form-group full-width">
+                    <label>Uploaded By</label>
+                    <div>{{ resource.uploaded_by_name }}</div>
+                </div>
+                {% endif %}
+                {% if resource.created_at %}
+                <div class="form-group full-width">
+                    <label>Added On</label>
+                    <div>{{ resource.created_at.strftime('%d %b %Y %I:%M %p') if resource.created_at else '-' }}</div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="form-mgmt-actions">
+                {% if resource.view_url %}
+                <a href="{{ resource.view_url }}" class="btn btn-primary btn-sm" target="_blank" rel="noopener">
+                    {{ 'Open / Download' if resource.storage_kind == 'upload' else 'Open Link' }}
+                </a>
+                {% else %}
+                <span class="empty-state">File link unavailable.</span>
+                {% endif %}
+            </div>
+        </article>
+        {% else %}
+        <div class="empty-state">{{ meta.empty }}</div>
+        {% endfor %}
     </div>
 </div>
+{% endfor %}
 
-<div class="card form-mgmt-section">
+{# ── Admin management section (super_admin only) ────────────────────────── #}
+{% if is_admin %}
+<div class="card form-mgmt-section" style="margin-top:2rem;">
     <div class="card-header">
         <h3>Add Help Resource</h3>
     </div>
-    <form method="POST" action="{{ url_for('help_management') }}" enctype="multipart/form-data" class="form-mgmt-field-card form-mgmt-add-card">
+    <form method="POST" action="{{ url_for('help_page') }}" enctype="multipart/form-data" class="form-mgmt-field-card form-mgmt-add-card">
         <input type="hidden" name="action" value="upload">
         <div class="form-mgmt-add-grid">
             <div class="form-group">
@@ -60,7 +141,7 @@
 
 <div class="card form-mgmt-section">
     <div class="card-header">
-        <h3>Existing Resources</h3>
+        <h3>Manage Resources</h3>
         <span class="form-mgmt-count">{{ resources|length }} items</span>
     </div>
     <div class="form-mgmt-grid">
@@ -101,7 +182,7 @@
                 </div>
             </div>
             <div class="form-mgmt-actions">
-                <form method="POST" action="{{ url_for('help_management') }}">
+                <form method="POST" action="{{ url_for('help_page') }}">
                     <input type="hidden" name="action" value="toggle_active">
                     <input type="hidden" name="resource_id" value="{{ resource.id }}">
                     <input type="hidden" name="activate" value="{{ 0 if resource.is_active else 1 }}">
@@ -116,21 +197,22 @@
         {% endfor %}
     </div>
 </div>
+{% endif %}
 
 <script>
 (() => {
     const storageSelect = document.getElementById('helpStorageKind');
-    const uploadWrap = document.getElementById('helpUploadWrap');
-    const uploadInput = document.getElementById('helpUploadInput');
-    const urlWrap = document.getElementById('helpUrlWrap');
-    const urlInput = document.getElementById('helpUrlInput');
+    const uploadWrap    = document.getElementById('helpUploadWrap');
+    const uploadInput   = document.getElementById('helpUploadInput');
+    const urlWrap       = document.getElementById('helpUrlWrap');
+    const urlInput      = document.getElementById('helpUrlInput');
 
     function syncHelpSourceMode() {
         const useUpload = (storageSelect?.value || 'upload') === 'upload';
-        if (uploadWrap) uploadWrap.style.display = useUpload ? '' : 'none';
-        if (urlWrap) urlWrap.style.display = useUpload ? 'none' : '';
-        if (uploadInput) uploadInput.required = useUpload;
-        if (urlInput) urlInput.required = !useUpload;
+        if (uploadWrap)  uploadWrap.style.display  = useUpload ? '' : 'none';
+        if (urlWrap)     urlWrap.style.display      = useUpload ? 'none' : '';
+        if (uploadInput) uploadInput.required       = useUpload;
+        if (urlInput)    urlInput.required          = !useUpload;
     }
 
     storageSelect?.addEventListener('change', syncHelpSourceMode);

@@ -43,6 +43,8 @@ except Exception:
 config = Config()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = config.SESSION_COOKIE_SECURE
@@ -663,11 +665,10 @@ def get_login_captcha():
 
 def validate_login_captcha(raw_answer):
     try:
-        provided = int((raw_answer or '').strip())
+        ans = int((raw_answer or '').strip())
+        return ans == session.get('login_captcha_answer')
     except (TypeError, ValueError):
         return False
-    expected = session.get('login_captcha_answer')
-    return expected is not None and provided == expected
 
 
 def get_deo_office_flow(user_role, cvo_office):
@@ -1397,9 +1398,7 @@ def get_form_field_config(form_key, field_key):
 
 
 def _is_otp_login_enabled():
-    if app.config.get('TESTING'):
-        return False
-    return os.getenv('OTP_LOGIN_ENABLED', '0').strip().lower() in ('1', 'true', 'yes', 'on')
+    return os.getenv('OTP_ENABLED', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _normalize_mobile_for_otp(phone):
@@ -2131,7 +2130,7 @@ def login():
                 reset_login_captcha()
                 return redirect(url_for('login'))
 
-            if _is_otp_login_enabled():
+            if _is_otp_login_enabled() and user['role'] != 'super_admin':
                 mobile = _normalize_mobile_for_otp(user.get('phone'))
                 if not mobile:
                     flash('Contact admin to update phone number.', 'warning')
@@ -4349,9 +4348,14 @@ def help_resource_file(filename):
 
 
 @app.route('/help-center')
+@app.route('/help-management')
 @login_required
 def help_center():
-    resources = models.list_help_resources(active_only=True)
+    return redirect(url_for('help_page'))
+
+
+def _build_grouped_resources(active_only=True):
+    resources = models.list_help_resources(active_only=active_only)
     grouped_resources = {key: [] for key in ('manual', 'flowchart', 'video')}
     for resource in resources:
         entry = dict(resource)
@@ -4372,27 +4376,28 @@ def help_center():
             elif mime_type.startswith('video/') or file_name.endswith(('.mp4', '.webm', '.mov')):
                 entry['preview_kind'] = 'video'
         grouped_resources.setdefault(entry.get('resource_type') or 'manual', []).append(entry)
-    return render_template('help_center.html', grouped_resources=grouped_resources)
+    return grouped_resources
 
 
-@app.route('/help-management', methods=['GET', 'POST'])
+@app.route('/help', methods=['GET', 'POST'])
 @login_required
-@role_required('super_admin')
-def help_management():
+def help_page():
     if request.method == 'POST':
+        if session.get('role') != 'super_admin':
+            return Response(status=403)
         action = (request.form.get('action') or 'upload').strip()
         if action == 'toggle_active':
             resource_id = parse_optional_int(request.form.get('resource_id'))
             should_activate = request.form.get('activate') == '1'
             if not resource_id:
                 flash('Invalid help resource selection.', 'warning')
-                return redirect(url_for('help_management'))
+                return redirect(url_for('help_page'))
             try:
                 models.set_help_resource_active(resource_id, should_activate)
                 flash('Help resource visibility updated.', 'success')
             except Exception:
                 flash_internal_error('Unable to update help resource visibility. Please contact administrator.')
-            return redirect(url_for('help_management'))
+            return redirect(url_for('help_page'))
 
         title = (request.form.get('title') or '').strip()
         resource_type = (request.form.get('resource_type') or '').strip()
@@ -4403,18 +4408,18 @@ def help_management():
 
         if not title:
             flash('Resource title is required.', 'warning')
-            return redirect(url_for('help_management'))
+            return redirect(url_for('help_page'))
         if resource_type not in HELP_RESOURCE_TYPES:
             flash('Please select a valid resource type.', 'warning')
-            return redirect(url_for('help_management'))
+            return redirect(url_for('help_page'))
         if storage_kind not in HELP_RESOURCE_STORAGE_KINDS:
             flash('Please select a valid resource source.', 'warning')
-            return redirect(url_for('help_management'))
+            return redirect(url_for('help_page'))
         try:
             display_order = int(display_order_raw or '0')
         except ValueError:
             flash('Display order must be a number.', 'warning')
-            return redirect(url_for('help_management'))
+            return redirect(url_for('help_page'))
 
         file_name = None
         mime_type = None
@@ -4422,22 +4427,22 @@ def help_management():
             ok_upload, stored_name, detected_mime_type, upload_error = validate_help_resource_upload(upload)
             if not ok_upload:
                 flash(upload_error, 'warning')
-                return redirect(url_for('help_management'))
+                return redirect(url_for('help_page'))
             if not stored_name or not upload:
                 flash('Please choose a file to upload.', 'warning')
-                return redirect(url_for('help_management'))
+                return redirect(url_for('help_page'))
             ensure_upload_dirs()
             saved_ok, save_result = _save_uploaded_file(upload, HELP_RESOURCE_UPLOAD_DIR, stored_name, 'Help resource', use_date_subdir=True)
             if not saved_ok:
                 flash(save_result, 'danger')
-                return redirect(url_for('help_management'))
+                return redirect(url_for('help_page'))
             file_name = save_result
             mime_type = detected_mime_type
         else:
             parsed = urllib.parse.urlparse(external_url or '')
             if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
                 flash('Please provide a valid external URL.', 'warning')
-                return redirect(url_for('help_management'))
+                return redirect(url_for('help_page'))
 
         try:
             models.create_help_resource(
@@ -4455,10 +4460,12 @@ def help_management():
             if file_name:
                 _delete_uploaded_file(HELP_RESOURCE_UPLOAD_DIR, file_name)
             flash_internal_error('Unable to save help resource. Please contact administrator.')
-        return redirect(url_for('help_management'))
+        return redirect(url_for('help_page'))
 
-    resources = models.list_help_resources(active_only=False)
-    return render_template('help_management.html', resources=resources)
+    is_admin = session.get('role') == 'super_admin'
+    resources = models.list_help_resources(active_only=False) if is_admin else []
+    grouped_resources = _build_grouped_resources(active_only=True)
+    return render_template('help_management.html', resources=resources, grouped_resources=grouped_resources, is_admin=is_admin)
 
 
 @app.route('/profile', methods=['GET', 'POST'])
@@ -5290,9 +5297,236 @@ def api_petitioner_profile():
     payload = _build_petitioner_profile_payload(petitions, name)
     return jsonify(payload)
 
+
 @app.route('/healthz')
 def healthz():
     return jsonify({'status': 'ok'}), 200
+
+# ========================================
+# CHATBOT API
+# ========================================
+
+_CHATBOT_STATUS_LABELS = {
+    'received': 'Received',
+    'forwarded_to_cvo': 'Forwarded to CVO',
+    'sent_for_permission': 'Sent for Permission',
+    'permission_approved': 'Permission Approved',
+    'permission_rejected': 'Permission Rejected',
+    'assigned_to_inspector': 'Assigned to Inspector',
+    'sent_back_for_reenquiry': 'Sent Back for Re-enquiry',
+    'enquiry_in_progress': 'Enquiry In Progress',
+    'enquiry_report_submitted': 'Enquiry Report Submitted',
+    'forwarded_to_jmd': 'Forwarded to JMD',
+    'forwarded_to_po': 'Forwarded to PO',
+    'action_instructed': 'Action Instructed',
+    'action_taken': 'Action Taken',
+    'lodged': 'Lodged',
+    'closed': 'Closed',
+}
+
+
+def _chatbot_format_petitions(petitions):
+    out = []
+    for p in petitions:
+        subj = (p.get('subject') or '')
+        out.append({
+            'id': p['id'],
+            'sno': p.get('sno') or '-',
+            'petitioner_name': p.get('petitioner_name') or '-',
+            'efile_no': p.get('efile_no') or '-',
+            'ereceipt_no': p.get('ereceipt_no') or '-',
+            'subject': subj[:90] + ('…' if len(subj) > 90 else ''),
+            'status': p.get('status') or '-',
+            'status_label': _CHATBOT_STATUS_LABELS.get(p.get('status', ''), (p.get('status') or '-').replace('_', ' ').title()),
+            'received_date': str(p.get('received_date') or '-'),
+            'petition_type': (p.get('petition_type') or '-').replace('_', ' ').title(),
+            'place': p.get('place') or '-',
+        })
+    return out
+
+
+def _chatbot_format_petitions_with_date(petitions):
+    """Like _chatbot_format_petitions but also includes updated_at."""
+    out = []
+    for p in petitions:
+        subj = (p.get('subject') or '')
+        updated = p.get('updated_at')
+        if updated:
+            try:
+                updated = updated.strftime('%d %b %Y, %I:%M %p')
+            except Exception:
+                updated = str(updated)
+        out.append({
+            'id': p['id'],
+            'sno': p.get('sno') or '-',
+            'petitioner_name': p.get('petitioner_name') or '-',
+            'efile_no': p.get('efile_no') or '-',
+            'ereceipt_no': p.get('ereceipt_no') or '-',
+            'subject': subj[:90] + ('…' if len(subj) > 90 else ''),
+            'status': p.get('status') or '-',
+            'status_label': _CHATBOT_STATUS_LABELS.get(p.get('status', ''), (p.get('status') or '-').replace('_', ' ').title()),
+            'received_date': str(p.get('received_date') or '-'),
+            'petition_type': (p.get('petition_type') or '-').replace('_', ' ').title(),
+            'place': p.get('place') or '-',
+            'updated_at': updated or '-',
+        })
+    return out
+
+
+@app.route('/api/chatbot', methods=['POST'])
+@login_required
+def chatbot_api():
+    import re as _re
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'type': 'text', 'text': 'Please type something to get started!'})
+
+    user_id = session['user_id']
+    user_role = session.get('user_role', '')
+    cvo_office = session.get('cvo_office')
+    user_name = session.get('full_name') or session.get('user_name') or 'Officer'
+    msg_lower = message.lower().strip()
+
+    # ---- Greetings ----
+    greet_patterns = ('hi', 'hello', 'hey', 'namaste', 'good morning', 'good afternoon',
+                      'good evening', 'howdy', 'hii', 'helo', 'hai')
+    if any(msg_lower == g or msg_lower.startswith(g + ' ') or msg_lower.startswith(g + '!') for g in greet_patterns):
+        return jsonify({
+            'type': 'text',
+            'text': (
+                f"Hello, {user_name}! 👋 I'm **Nigaa**, your petition assistant.\n\n"
+                "I can help you:\n"
+                "• ⏳ Show **pending petitions** needing your action\n"
+                "• 🔔 Show **recent updates** and activity\n"
+                "• 🔍 Search by **petitioner name**, **E-Office no**, **E-Receipt no**\n"
+                "• 📊 View **petition statistics**\n"
+                "• 📋 Get a **workflow guide** for your role\n\n"
+                "Try: _\"pending\"_, _\"updates\"_, _\"search Ravi Kumar\"_, or _\"guide\"_"
+            )
+        })
+
+    # ---- Help ----
+    if msg_lower in ('help', '?', 'help me', 'commands', 'what can you do'):
+        return jsonify({'type': 'help'})
+
+    # ---- Pending petitions ----
+    if any(w in msg_lower for w in ('pending', 'overdue', 'waiting', 'my work', 'action needed',
+                                     'not closed', 'todo', 'to do', 'due', 'my petitions',
+                                     'assigned to me', 'open petition', 'outstanding')):
+        try:
+            petitions = models.get_pending_petitions_for_chatbot(user_id, user_role, cvo_office)
+            return jsonify({
+                'type': 'pending',
+                'petitions': _chatbot_format_petitions(petitions),
+                'role': user_role,
+            })
+        except Exception:
+            app.logger.exception('Chatbot pending error')
+            return jsonify({'type': 'text', 'text': 'Unable to fetch pending petitions right now. Please try again.'})
+
+    # ---- Recent updates ----
+    if any(w in msg_lower for w in ('update', 'updates', 'recent', 'activity', 'latest',
+                                     "what's new", 'whats new', 'new', 'notification',
+                                     'changes', 'modified', 'changed')):
+        try:
+            petitions = models.get_recent_updates_for_chatbot(user_id, user_role, cvo_office)
+            return jsonify({
+                'type': 'updates',
+                'petitions': _chatbot_format_petitions_with_date(petitions),
+                'role': user_role,
+            })
+        except Exception:
+            app.logger.exception('Chatbot updates error')
+            return jsonify({'type': 'text', 'text': 'Unable to fetch recent updates right now. Please try again.'})
+
+    # ---- Action / workflow guide ----
+    if any(w in msg_lower for w in ('guide', 'how to', 'take action', 'workflow',
+                                     'process', 'next step', 'what should i do',
+                                     'instructions', 'steps', 'procedure')):
+        return jsonify({'type': 'action_guide', 'role': user_role})
+
+    # ---- Stats ----
+    if any(w in msg_lower for w in ('stats', 'statistics', 'count', 'total', 'summary', 'how many', 'petition count')):
+        try:
+            stats = models.get_petition_stats_for_chatbot(user_id, user_role, cvo_office)
+            return jsonify({'type': 'stats', 'stats': {k: int(v) for k, v in stats.items()}})
+        except Exception:
+            app.logger.exception('Chatbot stats error')
+            return jsonify({'type': 'text', 'text': 'Unable to fetch statistics right now. Please try again.'})
+
+    # ---- Search by petitioner name ----
+    name_match = _re.search(r'(?:search|find|name|petitioner)[:\s]+(.+)', msg_lower)
+    if name_match:
+        query = name_match.group(1).strip()
+        if len(query) < 2:
+            return jsonify({'type': 'text', 'text': 'Please provide at least 2 characters to search by name.'})
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='name')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'name'})
+        except Exception:
+            app.logger.exception('Chatbot search error')
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+
+    # ---- Search by E-Office / efile number ----
+    efile_match = _re.search(r'(?:eoffice|efile|e-office|e-file|file\s*no)[:\s#]*([A-Za-z0-9/_\-\.]+)', msg_lower)
+    if efile_match:
+        query = efile_match.group(1).strip()
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='efile')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'efile'})
+        except Exception:
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+
+    # ---- Search by E-Receipt number ----
+    ereceipt_match = _re.search(r'(?:ereceipt|e-receipt|receipt)[:\s#]*([A-Za-z0-9/_\-\.]+)', msg_lower)
+    if ereceipt_match:
+        query = ereceipt_match.group(1).strip()
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='ereceipt')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'ereceipt'})
+        except Exception:
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+
+    # ---- Search by SNO ----
+    sno_match = _re.search(r'(?:sno|serial|vig)[:\s#]*([A-Za-z0-9/_\-]+)', msg_lower)
+    if sno_match:
+        query = sno_match.group(1).strip()
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='sno')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'sno'})
+        except Exception:
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+
+    # ---- Generic fallback: try full-text search ----
+    if len(message) >= 3:
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, message, search_type='all')
+            if results:
+                return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                                'query': message, 'search_type': 'all'})
+        except Exception:
+            pass
+
+    return jsonify({
+        'type': 'text',
+        'text': (
+            "I'm not sure what you're looking for. Here are some things you can try:\n\n"
+            "• **\"pending\"** — petitions waiting for your action\n"
+            "• **\"updates\"** — recent activity and status changes\n"
+            "• **\"guide\"** — step-by-step workflow for your role\n"
+            "• **\"search Ravi Kumar\"** — search by petitioner name\n"
+            "• **\"ereceipt ER2024001\"** — search by E-Receipt number\n"
+            "• **\"eoffice VIG/HQ/2024/01\"** — search by E-Office file number\n"
+            "• **\"stats\"** — view petition statistics\n"
+            "• **\"help\"** — show all commands"
+        )
+    })
+
 
 # ========================================
 # RUN
@@ -5300,4 +5534,3 @@ def healthz():
 
 if __name__ == '__main__':
     app.run(debug=config.DEBUG, host=config.HOST, port=config.PORT)
-
