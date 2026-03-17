@@ -198,6 +198,38 @@ def ensure_schema_updates():
             ALTER TABLE petition_tracking
             ADD COLUMN IF NOT EXISTS attachment_file VARCHAR(255)
         """)
+        # Password-reset module: first-login forced change flag
+        cur.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE
+        """)
+
+        # Migration tracker — records one-time data migrations so they never
+        # repeat across server restarts.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name        VARCHAR(255) PRIMARY KEY,
+                applied_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # ONE-TIME: reset every existing user's password to the system default
+        # and force them to change it on next login.
+        cur.execute(
+            "SELECT 1 FROM schema_migrations WHERE name = 'set_default_passwords_v1'"
+        )
+        if not cur.fetchone():
+            _default_hash = generate_password_hash('Nigaa@123')
+            cur.execute("""
+                UPDATE users
+                SET password_hash       = %s,
+                    must_change_password = TRUE,
+                    updated_at           = CURRENT_TIMESTAMP
+            """, (_default_hash,))
+            cur.execute(
+                "INSERT INTO schema_migrations (name) VALUES ('set_default_passwords_v1')"
+            )
+
         # Dashboard / listing performance indexes
         cur.execute("CREATE INDEX IF NOT EXISTS idx_petitions_status ON petitions(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_petitions_received_date ON petitions(received_date DESC)")
@@ -225,16 +257,16 @@ def dict_cursor(conn):
 # USER OPERATIONS
 # ========================================
 
-def create_user(username, password, full_name, role, cvo_office=None, assigned_cvo_id=None, phone=None, email=None):
+def create_user(username, password, full_name, role, cvo_office=None, assigned_cvo_id=None, phone=None, email=None, must_change_password=True):
     conn = get_db()
     try:
         cur = dict_cursor(conn)
         password_hash = generate_password_hash(password)
         cur.execute("""
-            INSERT INTO users (username, password_hash, full_name, role, cvo_office, assigned_cvo_id, phone, email)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO users (username, password_hash, full_name, role, cvo_office, assigned_cvo_id, phone, email, must_change_password)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        """, (username, password_hash, full_name, role, cvo_office, assigned_cvo_id, phone, email))
+        """, (username, password_hash, full_name, role, cvo_office, assigned_cvo_id, phone, email, must_change_password))
         user_id = cur.fetchone()['id']
         conn.commit()
         return user_id
@@ -627,6 +659,64 @@ def set_user_password(user_id, password):
             "UPDATE users SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
             (password_hash, user_id)
         )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def set_must_change_password(user_id, value: bool):
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute(
+            "UPDATE users SET must_change_password = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (value, user_id)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def update_password_and_phone(user_id, new_password, phone):
+    """First-login forced change: update password + phone, clear must_change_password flag."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        password_hash = generate_password_hash(new_password)
+        cur.execute("""
+            UPDATE users
+            SET password_hash = %s, phone = %s,
+                must_change_password = FALSE,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (password_hash, phone.strip(), user_id))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+
+def update_password_only(user_id, new_password):
+    """Forgot-password OTP recovery: update password, clear must_change_password flag."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        password_hash = generate_password_hash(new_password)
+        cur.execute("""
+            UPDATE users
+            SET password_hash = %s,
+                must_change_password = FALSE,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (password_hash, user_id))
         conn.commit()
     except Exception as e:
         conn.rollback()

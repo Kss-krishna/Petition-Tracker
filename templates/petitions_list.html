@@ -99,10 +99,10 @@
                     </td>
                     <td class="text-truncate subject-cell" title="{{ p.subject }}">{{ p.subject[:72] }}{% if p.subject|length > 72 %}...{% endif %}</td>
                     <td>
-                        <span class="list-status" style="--status-color: {{ status_colors.get(p.status, '#6b7280') }}">{{ status_labels.get(p.status, p.status) }}</span>
+                        <span class="list-status" translate="no" data-status="{{ p.status }}" style="--status-color: {{ status_colors.get(p.status, '#6b7280') }}">{{ status_labels.get(p.status, p.status) }}</span>
                         {% if p.is_overdue_escalated %}
                         <div style="margin-top:6px;">
-                            <span class="status-badge" style="--status-color:#b91c1c;">Overdue</span>
+                            <span class="status-badge" translate="no" data-status="overdue" style="--status-color:#b91c1c;" data-i18n="status.overdue">Overdue</span>
                         </div>
                         {% endif %}
                         {% set sla_row = sla_eval_map.get(p.id) %}

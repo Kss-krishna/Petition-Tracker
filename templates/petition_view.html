@@ -31,11 +31,11 @@
         <div class="petition-title-row">
             <div>
                 <span class="petition-sno">{{ petition.sno }}</span>
-                <span class="status-badge status-badge-lg" style="--status-color: {{ status_colors.get(petition.status, '#6b7280') }}">
+                <span class="status-badge status-badge-lg" translate="no" data-status="{{ petition.status }}" style="--status-color: {{ status_colors.get(petition.status, '#6b7280') }}">
                     {{ status_labels.get(petition.status, petition.status) }}
                 </span>
                 {% if petition.is_overdue_escalated %}
-                <span class="status-badge status-badge-lg" style="--status-color:#b91c1c">Overdue</span>
+                <span class="status-badge status-badge-lg" translate="no" data-status="overdue" style="--status-color:#b91c1c" data-i18n="status.overdue">Overdue</span>
                 {% endif %}
                 {% if petition.requires_permission %}
                 <span class="badge badge-permission">Permission: {{ petition.permission_status|title }}</span>
@@ -142,7 +142,7 @@
                 </div>
                 <div class="info-item">
                     <span class="info-label">Type</span>
-                    <span class="info-value"><span class="badge badge-type">{{ petition_types.get(petition.petition_type, petition.petition_type) }}</span></span>
+                    <span class="info-value"><span class="badge badge-type" translate="no">{{ petition_types.get(petition.petition_type, petition.petition_type) }}</span></span>
                 </div>
                 <div class="info-item">
                     <span class="info-label">Source of Petition</span>

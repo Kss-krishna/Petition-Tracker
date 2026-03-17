@@ -5,7 +5,7 @@
 {% block content %}
 <div class="card profile-card">
     <div class="card-header">
-        <h2>Profile Settings</h2>
+        <h2 data-i18n="profile.page_title">Profile Settings</h2>
     </div>
     <form method="POST" action="{{ url_for('profile') }}" enctype="multipart/form-data" class="user-form">
         <div class="form-grid">
@@ -34,21 +34,21 @@
                 <input type="password" name="confirm_password" minlength="6" placeholder="Re-enter new password">
             </div>
             <div class="form-group full-width">
-                <label>Profile Photo (jpg, jpeg, png, webp - max 2MB)</label>
+                <label data-i18n="profile.photo_label">Profile Photo (jpg, jpeg, png, webp – max 2MB)</label>
                 <input type="file" name="profile_photo" accept=".jpg,.jpeg,.png,.webp">
                 {% if user.profile_photo %}
                 <div class="profile-photo-preview-wrap">
                     <img src="{{ url_for('profile_photo_file', filename=user.profile_photo) }}" alt="Current profile photo" class="profile-photo-preview">
                     <label class="profile-photo-remove">
                         <input type="checkbox" name="remove_photo">
-                        Remove current profile photo
+                        <span data-i18n="profile.remove_photo">Remove current profile photo</span>
                     </label>
                 </div>
                 {% endif %}
             </div>
         </div>
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save Profile</button>
+            <button type="submit" class="btn btn-primary" data-i18n="profile.save_button">Save Profile</button>
         </div>
     </form>
 </div>

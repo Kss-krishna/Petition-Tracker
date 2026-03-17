@@ -6,7 +6,7 @@
 <div class="users-page">
     <div class="card">
         <div class="card-header">
-            <h2>Create Officer Login</h2>
+            <h2 data-i18n="users.create_title">Create Officer Login</h2>
         </div>
         <form method="POST" action="{{ url_for('user_create') }}" class="user-form">
             <div class="form-grid">
@@ -15,8 +15,13 @@
                     <input type="text" name="username" required placeholder="Login username">
                 </div>
                 <div class="form-group">
-                    <label>Password <span class="required">*</span></label>
-                    <input type="password" name="password" required placeholder="Set password">
+                    <label>Password</label>
+                    <input type="text" readonly value="Nigaa@123"
+                           style="color:var(--text-muted);cursor:default;letter-spacing:0.05em;"
+                           title="Default password — user must change on first login">
+                    <small style="color:var(--text-muted);font-size:0.75rem;">
+                        Default. User is forced to change on first login.
+                    </small>
                 </div>
                 <div class="form-group">
                     <label>Officer Name <span class="required">*</span></label>
@@ -75,12 +80,13 @@
 
     <div class="card">
         <div class="card-header">
-            <h2>Bulk Create Users (Excel/CSV)</h2>
+            <h2 data-i18n="users.bulk_create_title">Bulk Create Users (Excel/CSV)</h2>
         </div>
         <form method="POST" action="{{ url_for('users_upload') }}" enctype="multipart/form-data" class="user-form">
             <div class="users-upload-note">
-                Required columns: <code>username</code>, <code>password</code>, <code>full_name</code>, <code>role</code><br>
-                Optional: <code>cvo_office</code>, <code>assigned_cvo_username</code>, <code>phone</code>, <code>email</code>
+                Required columns: <code>username</code>, <code>full_name</code>, <code>role</code><br>
+                Optional: <code>cvo_office</code>, <code>assigned_cvo_username</code>, <code>phone</code>, <code>email</code><br>
+                <span style="color:var(--accent);font-weight:600;">Password column is not needed</span> — all users start with <code>Nigaa@123</code> and must change it on first login.
             </div>
             <div class="form-grid">
                 <div class="form-group full-width">
@@ -96,7 +102,7 @@
 
     <div class="card">
         <div class="card-header">
-            <h2>Password Recovery Approvals</h2>
+            <h2 data-i18n="users.recovery_approvals_title">Password Recovery Approvals</h2>
         </div>
         <div class="users-approval-wrap users-approval-board">
             <div class="users-approval-head">
@@ -134,14 +140,14 @@
                 {% endfor %}
             </div>
             {% else %}
-            <div class="empty-state users-recovery-empty">No pending password recovery requests.</div>
+            <div class="empty-state users-recovery-empty" data-i18n="users.no_recovery_requests">No pending password recovery requests.</div>
             {% endif %}
         </div>
     </div>
 
     <div class="card">
         <div class="card-header user-admin-header">
-            <h2>Officer Directory & Controls</h2>
+            <h2 data-i18n="users.directory_title">Officer Directory & Controls</h2>
             <div class="header-actions user-admin-tools">
                 <div class="filter-group">
                     <label>Select User</label>
@@ -210,10 +216,13 @@
                             <button type="submit" class="btn btn-xs btn-primary">Reset Username</button>
                         </form>
 
-                        <form method="POST" action="{{ url_for('user_reset_password', user_id=u.id) }}" class="user-action-card">
+                        <form method="POST" action="{{ url_for('user_reset_password', user_id=u.id) }}" class="user-action-card"
+                              onsubmit="return confirm('Reset password to Nigaa@123? User must change it on next login.')">
                             <h4>Reset Password</h4>
-                            <input type="password" name="new_password" required minlength="6" placeholder="New password">
-                            <button type="submit" class="btn btn-xs btn-primary">Reset Password</button>
+                            <p style="font-size:0.78rem;color:var(--text-dim);margin:0;">
+                                Resets to <strong>Nigaa@123</strong>.<br>User is forced to change on next login.
+                            </p>
+                            <button type="submit" class="btn btn-xs btn-warning">Reset to Default</button>
                         </form>
 
                         <form method="POST" action="{{ url_for('user_update_contact', user_id=u.id) }}" enctype="multipart/form-data" class="user-action-card">

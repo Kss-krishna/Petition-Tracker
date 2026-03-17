@@ -1301,6 +1301,8 @@ def _security_before_request():
             expected_token = session.get('_csrf_token') or ''
             if not expected_token or not sent_token or not hmac.compare_digest(sent_token, expected_token):
                 log_security_event('web.csrf_validation_failed', severity='warning')
+                if _request_prefers_json():
+                    return jsonify({'error': 'Invalid or missing CSRF token.'}), 403
                 flash('Security validation failed. Please refresh and try again.', 'danger')
                 return redirect(request.referrer or url_for('dashboard'))
     if 'user_id' in session:
@@ -1777,6 +1779,9 @@ def login_required(f):
             log_security_event('auth.otp_pending_access_blocked', severity='warning')
             flash('Please complete OTP verification to continue.', 'warning')
             return redirect(url_for('login'))
+        if session.get('force_change_user_id'):
+            flash('You must change your password before continuing.', 'warning')
+            return redirect(url_for('first_login_setup'))
         if 'user_id' not in session:
             log_security_event('access.unauthenticated_request', severity='warning')
             flash('Please login to access this page.', 'warning')
@@ -2130,13 +2135,31 @@ def login():
                 reset_login_captcha()
                 return redirect(url_for('login'))
 
+            # First-login forced password change (must happen before OTP)
+            if user.get('must_change_password'):
+                session.clear()
+                session['force_change_user_id'] = user['id']
+                session['force_change_username'] = user['username']
+                session['force_change_role'] = user['role']
+                log_security_event('auth.first_login_change_required', severity='info',
+                                   target_user_id=user['id'])
+                return redirect(url_for('first_login_setup'))
+
             if _is_otp_login_enabled() and user['role'] != 'super_admin':
                 mobile = _normalize_mobile_for_otp(user.get('phone'))
                 if not mobile:
-                    flash('Contact admin to update phone number.', 'warning')
-                    reset_login_captcha()
-                    a, b = get_login_captcha()
-                    return render_template('login.html', captcha_a=a, captcha_b=b, otp_required=False, otp_mobile_masked='')
+                    # No phone on record → route through first-login setup so the
+                    # user can register their mobile number (and optionally change
+                    # their password).  Works for both newly created accounts and
+                    # existing accounts that were created before OTP was enforced.
+                    session.clear()
+                    session['force_change_user_id'] = user['id']
+                    session['force_change_username'] = user['username']
+                    session['force_change_role'] = user['role']
+                    log_security_event('auth.no_phone_force_setup', severity='info',
+                                       target_user_id=user['id'])
+                    flash('Please register your mobile number to enable OTP-based login.', 'info')
+                    return redirect(url_for('first_login_setup'))
                 ok, msg = _send_login_otp(mobile)
                 if not ok:
                     flash(msg, 'danger')
@@ -2211,6 +2234,220 @@ def request_recovery():
         else:
             flash_internal_error('Unable to submit recovery request. Please contact administrator.')
     return redirect(url_for('login'))
+
+_DEFAULT_PASSWORD = 'Nigaa@123'
+_PW_RESET_SESSION_KEYS = (
+    'pw_reset_user_id', 'pw_reset_username',
+    'pw_reset_mobile', 'pw_reset_otp_verified',
+    'pw_reset_is_super_admin',
+)
+
+
+def _clear_pw_reset_session():
+    for k in _PW_RESET_SESSION_KEYS:
+        session.pop(k, None)
+
+
+# ── PASSWORD RESET MODULE ────────────────────────────────────────────────────
+
+@app.route('/auth/first-login-setup', methods=['GET', 'POST'])
+def first_login_setup():
+    """Forced password change on first login.
+    Super-admin: only password required (no OTP, no phone needed).
+    All others: password + phone required (phone used for OTP on every login).
+    """
+    user_id = session.get('force_change_user_id')
+    if not user_id:
+        return redirect(url_for('login'))
+
+    is_super_admin = session.get('force_change_role') == 'super_admin'
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+        phone = (request.form.get('phone') or '').strip()
+
+        if new_password == _DEFAULT_PASSWORD:
+            flash('You cannot keep the default password. Please choose a new one.', 'danger')
+            return redirect(url_for('first_login_setup'))
+
+        ok, err = validate_password_strength(new_password, 'New password')
+        if not ok:
+            flash(err, 'danger')
+            return redirect(url_for('first_login_setup'))
+
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'danger')
+            return redirect(url_for('first_login_setup'))
+
+        if not is_super_admin:
+            # Phone is required for OTP-based login
+            if not re.fullmatch(r'[6-9]\d{9}', phone):
+                flash('Please enter a valid 10-digit Indian mobile number (starts with 6–9).', 'danger')
+                return redirect(url_for('first_login_setup'))
+
+        try:
+            if is_super_admin:
+                models.update_password_only(user_id, new_password)
+            else:
+                models.update_password_and_phone(user_id, new_password, phone)
+        except Exception:
+            flash_internal_error('Unable to update credentials. Please try again.')
+            return redirect(url_for('first_login_setup'))
+
+        log_security_event('auth.first_login_password_changed', severity='info',
+                           target_user_id=user_id)
+        session.pop('force_change_user_id', None)
+        session.pop('force_change_username', None)
+        session.pop('force_change_role', None)
+        flash('Password updated successfully. Please login with your new credentials.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('first_login_setup.html',
+                           username=session.get('force_change_username', ''),
+                           is_super_admin=is_super_admin)
+
+
+@app.route('/auth/forgot-password', methods=['POST'])
+def forgot_password_request():
+    """Step 1 – look up user, send OTP (super_admin bypasses OTP)."""
+    username = (request.form.get('fp_username') or '').strip()
+    if not username:
+        flash('Please enter your username.', 'warning')
+        return redirect(url_for('login'))
+
+    user = models.get_user_by_username(username)
+    # Generic message to prevent user enumeration
+    _generic_info = 'If that username exists and is active, an OTP has been sent to the registered mobile number.'
+
+    if not user or not user.get('is_active'):
+        flash(_generic_info, 'info')
+        return redirect(url_for('login'))
+
+    _clear_pw_reset_session()
+    session['pw_reset_user_id'] = user['id']
+    session['pw_reset_username'] = user['username']
+
+    # Super-admin: bypass OTP, jump directly to set-password
+    if user['role'] == 'super_admin':
+        session['pw_reset_otp_verified'] = True
+        session['pw_reset_is_super_admin'] = True
+        log_security_event('auth.forgot_password_superadmin_bypass', severity='info',
+                           detail=f'user={username}')
+        return redirect(url_for('forgot_password_set'))
+
+    mobile = _normalize_mobile_for_otp(user.get('phone') or '')
+    if not mobile:
+        flash('No valid mobile number is linked to this account. '
+              'Contact Super Admin for password assistance.', 'warning')
+        _clear_pw_reset_session()
+        return redirect(url_for('login'))
+
+    ok, msg = _send_login_otp(mobile)
+    if not ok:
+        flash(f'Unable to send OTP: {msg}', 'danger')
+        _clear_pw_reset_session()
+        return redirect(url_for('login'))
+
+    session['pw_reset_mobile'] = mobile
+    session['pw_reset_otp_verified'] = False
+    log_security_event('auth.forgot_password_otp_sent', severity='info',
+                       detail=f'user={username}')
+    return render_template('password_reset.html', step='verify_otp',
+                           masked_mobile=_mask_mobile(mobile))
+
+
+@app.route('/auth/forgot-password/verify', methods=['POST'])
+def forgot_password_verify():
+    """Step 2 – validate the OTP."""
+    if not session.get('pw_reset_user_id') or session.get('pw_reset_otp_verified'):
+        flash('Session expired or invalid. Please start over.', 'warning')
+        return redirect(url_for('login'))
+
+    mobile = session.get('pw_reset_mobile', '')
+    otp_code = (request.form.get('otp_code') or '').strip()
+
+    if not re.fullmatch(r'\d{4,10}', otp_code):
+        flash('OTP must be 4–10 digits.', 'warning')
+        return render_template('password_reset.html', step='verify_otp',
+                               masked_mobile=_mask_mobile(mobile))
+
+    ok, msg = _verify_login_otp(mobile, otp_code)
+    if not ok:
+        log_security_event('auth.forgot_password_otp_failed', severity='warning',
+                           detail=f"user={session.get('pw_reset_username')}")
+        flash(msg, 'danger')
+        return render_template('password_reset.html', step='verify_otp',
+                               masked_mobile=_mask_mobile(mobile))
+
+    session['pw_reset_otp_verified'] = True
+    return redirect(url_for('forgot_password_set'))
+
+
+@app.route('/auth/forgot-password/resend-otp', methods=['POST'])
+def forgot_password_resend_otp():
+    """Resend OTP during the verify step."""
+    if not session.get('pw_reset_mobile') or session.get('pw_reset_otp_verified'):
+        flash('Session expired or OTP already verified.', 'warning')
+        return redirect(url_for('login'))
+
+    mobile = session['pw_reset_mobile']
+    ok, msg = _send_login_otp(mobile)
+    if ok:
+        flash(f'OTP resent to {_mask_mobile(mobile)}.', 'success')
+    else:
+        flash(f'Could not resend OTP: {msg}', 'danger')
+    return render_template('password_reset.html', step='verify_otp',
+                           masked_mobile=_mask_mobile(mobile))
+
+
+@app.route('/auth/forgot-password/set', methods=['GET', 'POST'])
+def forgot_password_set():
+    """Step 3 – set a new password after OTP is verified."""
+    if not session.get('pw_reset_user_id') or not session.get('pw_reset_otp_verified'):
+        flash('Session expired. Please start over.', 'warning')
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if new_password == _DEFAULT_PASSWORD:
+            flash('You cannot use the default password.', 'danger')
+            return render_template('password_reset.html', step='set_password',
+                                   username=session.get('pw_reset_username', ''))
+
+        ok, err = validate_password_strength(new_password, 'New password')
+        if not ok:
+            flash(err, 'danger')
+            return render_template('password_reset.html', step='set_password',
+                                   username=session.get('pw_reset_username', ''))
+
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'danger')
+            return render_template('password_reset.html', step='set_password',
+                                   username=session.get('pw_reset_username', ''))
+
+        user_id = session['pw_reset_user_id']
+        try:
+            models.update_password_only(user_id, new_password)
+        except Exception:
+            flash_internal_error('Unable to reset password. Please try again.')
+            return render_template('password_reset.html', step='set_password',
+                                   username=session.get('pw_reset_username', ''))
+
+        log_security_event('auth.password_reset_completed', severity='info',
+                           target_user_id=user_id)
+        _clear_pw_reset_session()
+        flash('Password reset successfully. Please login with your new password.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('password_reset.html', step='set_password',
+                           username=session.get('pw_reset_username', ''))
+
+
+# ── END PASSWORD RESET MODULE ────────────────────────────────────────────────
+
 
 @app.route('/logout')
 def logout():
@@ -4383,7 +4620,7 @@ def _build_grouped_resources(active_only=True):
 @login_required
 def help_page():
     if request.method == 'POST':
-        if session.get('role') != 'super_admin':
+        if session.get('user_role') not in ('super_admin', 'po'):
             return Response(status=403)
         action = (request.form.get('action') or 'upload').strip()
         if action == 'toggle_active':
@@ -4462,7 +4699,7 @@ def help_page():
             flash_internal_error('Unable to save help resource. Please contact administrator.')
         return redirect(url_for('help_page'))
 
-    is_admin = session.get('role') == 'super_admin'
+    is_admin = session.get('user_role') in ('super_admin', 'po')
     resources = models.list_help_resources(active_only=False) if is_admin else []
     grouped_resources = _build_grouped_resources(active_only=True)
     return render_template('help_management.html', resources=resources, grouped_resources=grouped_resources, is_admin=is_admin)
@@ -4747,7 +4984,8 @@ def form_management():
 def user_create():
     try:
         username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
+        # Password is always the system default; users must change it on first login.
+        password = _DEFAULT_PASSWORD
         full_name = request.form.get('full_name', '').strip()
         role = (request.form.get('role') or '').strip()
         cvo_office = (request.form.get('cvo_office') or '').strip() or None
@@ -4757,10 +4995,6 @@ def user_create():
 
         if not username or len(username) < 3:
             flash('Username must be at least 3 characters.', 'warning')
-            return redirect(url_for('users_list'))
-        ok_password, password_error = validate_password_strength(password, 'Password')
-        if not password or not ok_password:
-            flash(password_error or 'Password is required.', 'warning')
             return redirect(url_for('users_list'))
         if not full_name or len(full_name) < 3:
             flash('Officer name must be at least 3 characters.', 'warning')
@@ -4828,7 +5062,7 @@ def users_upload():
         flash('Only .xlsx or .csv files are allowed for bulk user creation.', 'danger')
         return redirect(url_for('users_list'))
 
-    required_headers = {'username', 'password', 'full_name', 'role'}
+    required_headers = {'username', 'full_name', 'role'}
     rows = []
     try:
         if ext == 'csv':
@@ -4873,7 +5107,8 @@ def users_upload():
     errors = []
     for i, row in enumerate(rows, start=2):
         username = row.get('username', '').strip()
-        password = row.get('password', '').strip()
+        # Password column is ignored — every user starts with the system default.
+        password = _DEFAULT_PASSWORD
         full_name = row.get('full_name', '').strip()
         role = row.get('role', '').strip().lower()
         cvo_office = row.get('cvo_office', '').strip().lower() or None
@@ -4881,7 +5116,7 @@ def users_upload():
         phone = row.get('phone', '').strip() or None
         email = row.get('email', '').strip() or None
 
-        if not username or not password or not full_name or not role:
+        if not username or not full_name or not role:
             failed += 1
             errors.append(f'Row {i}: required values missing.')
             continue
@@ -4896,11 +5131,6 @@ def users_upload():
         if len(username) < 3:
             failed += 1
             errors.append(f'Row {i}: username must be at least 3 characters.')
-            continue
-        ok_password, password_error = validate_password_strength(password, 'Password')
-        if not ok_password:
-            failed += 1
-            errors.append(f'Row {i}: {password_error}')
             continue
         if len(full_name) < 3:
             failed += 1
@@ -5040,17 +5270,12 @@ def user_edit(user_id):
 @role_required('super_admin')
 def user_reset_password(user_id):
     try:
-        new_password = request.form.get('new_password', '').strip()
-        ok_password, password_error = validate_password_strength(new_password, 'Password')
-        if not ok_password:
-            flash(password_error, 'warning')
-            return redirect(url_for('users_list'))
-        
-        models.set_user_password(user_id, new_password)
-        flash('Password reset successfully.', 'success')
+        # Always resets to the system default; user must change on next login.
+        models.set_user_password(user_id, _DEFAULT_PASSWORD)
+        models.set_must_change_password(user_id, True)
+        flash('Password reset to default. User will be prompted to change it on next login.', 'success')
     except Exception:
         flash_internal_error('Unable to reset password. Please contact administrator.')
-    
     return redirect(url_for('users_list'))
 
 @app.route('/users/<int:user_id>/reset-username', methods=['POST'])
@@ -5377,10 +5602,17 @@ def _chatbot_format_petitions_with_date(petitions):
 @login_required
 def chatbot_api():
     import re as _re
+    import random as _random
+    try:
+        from rapidfuzz import fuzz as _fuzz
+        _HAS_FUZZ = True
+    except ImportError:
+        _HAS_FUZZ = False
+
     data = request.get_json(silent=True) or {}
     message = (data.get('message') or '').strip()
     if not message:
-        return jsonify({'type': 'text', 'text': 'Please type something to get started!'})
+        return jsonify({'type': 'text', 'text': 'Go ahead, type something! I\'m all ears. 😊'})
 
     user_id = session['user_id']
     user_role = session.get('user_role', '')
@@ -5390,30 +5622,113 @@ def chatbot_api():
 
     # ---- Greetings ----
     greet_patterns = ('hi', 'hello', 'hey', 'namaste', 'good morning', 'good afternoon',
-                      'good evening', 'howdy', 'hii', 'helo', 'hai')
+                      'good evening', 'howdy', 'hii', 'helo', 'hai', 'vanakkam', 'namaskar',
+                      'sup', 'yo', 'greetings')
     if any(msg_lower == g or msg_lower.startswith(g + ' ') or msg_lower.startswith(g + '!') for g in greet_patterns):
+        greet_replies = [
+            f"Hey {user_name}! 👋 Great to see you. What can I help you with today?",
+            f"Hello {user_name}! 😊 I'm Nigaa, your petition assistant. What do you need?",
+            f"Hi there, {user_name}! 👋 Ready to help — try _\"pending\"_, _\"stats\"_, or _\"guide\"_.",
+            f"Namaste, {user_name}! 🙏 How can I assist you today?",
+            f"Hey! Good to have you here, {user_name}. 😄 What's on your mind?",
+        ]
         return jsonify({
             'type': 'text',
-            'text': (
-                f"Hello, {user_name}! 👋 I'm **Nigaa**, your petition assistant.\n\n"
-                "I can help you:\n"
-                "• ⏳ Show **pending petitions** needing your action\n"
-                "• 🔔 Show **recent updates** and activity\n"
-                "• 🔍 Search by **petitioner name**, **E-Office no**, **E-Receipt no**\n"
-                "• 📊 View **petition statistics**\n"
-                "• 📋 Get a **workflow guide** for your role\n\n"
-                "Try: _\"pending\"_, _\"updates\"_, _\"search Ravi Kumar\"_, or _\"guide\"_"
+            'text': _random.choice(greet_replies) + (
+                "\n\n**Quick options:**\n"
+                "• ⏳ _\"pending\"_ — petitions needing action\n"
+                "• 🔔 _\"updates\"_ — recent activity\n"
+                "• 📊 _\"stats\"_ — petition counts\n"
+                "• 📋 _\"guide\"_ — workflow steps for your role"
             )
         })
 
+    # ---- Thanks / Appreciation ----
+    thanks_words = ('thanks', 'thank you', 'thank u', 'thx', 'ty', 'appreciated',
+                    'great job', 'well done', 'nice', 'awesome', 'perfect', 'good bot',
+                    'helpful', 'superb', 'excellent', 'brilliant', 'amazing', 'fantastic',
+                    'good work', 'great', 'wonderful', 'cheers')
+    if any(w in msg_lower for w in thanks_words):
+        thanks_replies = [
+            "Happy to help! 😊 Anything else you need?",
+            "Glad I could assist! 🙌 Let me know if there's anything more.",
+            "You're welcome! 😄 I'm always here when you need me.",
+            "Anytime! 🤝 That's what I'm here for. Just ask!",
+            "Sure thing! 👍 Feel free to ask anything else.",
+            "Always a pleasure! 😊 Need anything else?",
+        ]
+        return jsonify({'type': 'text', 'text': _random.choice(thanks_replies)})
+
+    # ---- Goodbye / Farewell ----
+    bye_words = ('bye', 'goodbye', 'good bye', 'see you', 'cya', 'later', 'take care',
+                 'ok thanks', 'ok bye', 'got it thanks', 'that is all', "that's all",
+                 'no thanks', 'nothing else', 'all good', 'im done', "i'm done")
+    if any(w in msg_lower for w in bye_words):
+        bye_replies = [
+            "Take care! 👋 Come back anytime you need help.",
+            "Goodbye! Have a productive day! 😊",
+            "See you soon! 🙏 Stay on top of those petitions!",
+            "Bye for now! 👋 I'll be right here whenever you need me.",
+            "Until next time! 😊 Keep up the great work!",
+        ]
+        return jsonify({'type': 'text', 'text': _random.choice(bye_replies)})
+
+    # ---- How are you / general small talk ----
+    if any(w in msg_lower for w in ('how are you', 'how r u', 'how do you do', 'whats up',
+                                     "what's up", 'hows it going', "how's it going", 'all good')):
+        how_replies = [
+            "Doing great, thanks for asking! 😄 Ready to help you with petitions. What do you need?",
+            "All systems go! 🚀 What can I assist you with today?",
+            "Running at full speed! ⚡ What's on your plate today?",
+            "I'm doing well! 😊 Always happy to help. What do you need?",
+        ]
+        return jsonify({'type': 'text', 'text': _random.choice(how_replies)})
+
+    # ---- Who are you / intro ----
+    if any(w in msg_lower for w in ('who are you', 'what are you', 'who r u',
+                                     'introduce yourself', 'tell me about yourself', 'your name')):
+        return jsonify({'type': 'text', 'text': (
+            f"I'm **Nigaa** 🤖 — your smart petition assistant!\n\n"
+            "I help officers manage and track petitions right from this chat window. "
+            "You can search petitions, check pending work, view stats, and get role-specific workflow guidance — "
+            "all without leaving this page.\n\n"
+            "Think of me as your digital sidekick! 🦸 Type _\"help\"_ to see everything I can do."
+        )})
+
+    # ---- Frustration / Problem ----
+    frustration_words = ('not working', "doesn't work", 'doesnt work', 'broken', 'problem',
+                         'issue', 'fail', 'failed', 'wrong', 'useless', 'bad bot',
+                         'frustrated', 'stuck', 'confused', 'lost', 'no idea', 'dont understand',
+                         "don't understand", 'not helpful', 'bad', 'terrible', 'hate this')
+    if any(w in msg_lower for w in frustration_words):
+        empathy_replies = [
+            f"I'm sorry you're having trouble, {user_name}. 😔 Let me help — type _\"help\"_ to see all available commands.",
+            f"That sounds frustrating. I'm here to help! 🤝 Type _\"help\"_ to see what I can do for you.",
+            f"Don't worry, {user_name}! 😊 Let's sort this out. What exactly do you need?",
+            f"I hear you! Let me try to make this easier. 🙏 What were you looking for?",
+        ]
+        return jsonify({'type': 'text', 'text': _random.choice(empathy_replies)})
+
     # ---- Help ----
-    if msg_lower in ('help', '?', 'help me', 'commands', 'what can you do'):
+    if msg_lower in ('help', '?', 'help me', 'commands', 'what can you do', 'options', 'menu'):
         return jsonify({'type': 'help'})
 
+    # ---- Keyword sets for main intents ----
+    _PENDING_WORDS = ('pending', 'overdue', 'waiting', 'my work', 'action needed',
+                      'not closed', 'todo', 'to do', 'due', 'my petitions',
+                      'assigned to me', 'open petition', 'outstanding', 'unresolved',
+                      'backlog', 'incomplete', 'need to act', 'not done', 'left')
+    _UPDATE_WORDS = ('update', 'updates', 'recent', 'activity', 'latest',
+                     "what's new", 'whats new', 'notification', 'changes',
+                     'modified', 'changed', 'progress', 'moved', 'feed', 'history')
+    _GUIDE_WORDS = ('guide', 'how to', 'take action', 'workflow', 'process',
+                    'next step', 'what should i do', 'instructions', 'steps',
+                    'procedure', 'help me do', 'walkthrough', 'how do i', 'what do i do')
+    _STATS_WORDS = ('stats', 'statistics', 'count', 'total', 'summary', 'how many',
+                    'petition count', 'numbers', 'overview', 'breakdown', 'tally', 'figure')
+
     # ---- Pending petitions ----
-    if any(w in msg_lower for w in ('pending', 'overdue', 'waiting', 'my work', 'action needed',
-                                     'not closed', 'todo', 'to do', 'due', 'my petitions',
-                                     'assigned to me', 'open petition', 'outstanding')):
+    if any(w in msg_lower for w in _PENDING_WORDS):
         try:
             petitions = models.get_pending_petitions_for_chatbot(user_id, user_role, cvo_office)
             return jsonify({
@@ -5423,12 +5738,10 @@ def chatbot_api():
             })
         except Exception:
             app.logger.exception('Chatbot pending error')
-            return jsonify({'type': 'text', 'text': 'Unable to fetch pending petitions right now. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Hmm, I had trouble fetching pending petitions just now. Mind trying again? 🔄'})
 
     # ---- Recent updates ----
-    if any(w in msg_lower for w in ('update', 'updates', 'recent', 'activity', 'latest',
-                                     "what's new", 'whats new', 'new', 'notification',
-                                     'changes', 'modified', 'changed')):
+    if any(w in msg_lower for w in _UPDATE_WORDS):
         try:
             petitions = models.get_recent_updates_for_chatbot(user_id, user_role, cvo_office)
             return jsonify({
@@ -5438,38 +5751,39 @@ def chatbot_api():
             })
         except Exception:
             app.logger.exception('Chatbot updates error')
-            return jsonify({'type': 'text', 'text': 'Unable to fetch recent updates right now. Please try again.'})
+            return jsonify({'type': 'text', 'text': "Oops! Couldn't load updates right now. Please try again in a moment. 😔"})
 
     # ---- Action / workflow guide ----
-    if any(w in msg_lower for w in ('guide', 'how to', 'take action', 'workflow',
-                                     'process', 'next step', 'what should i do',
-                                     'instructions', 'steps', 'procedure')):
+    if any(w in msg_lower for w in _GUIDE_WORDS):
         return jsonify({'type': 'action_guide', 'role': user_role})
 
     # ---- Stats ----
-    if any(w in msg_lower for w in ('stats', 'statistics', 'count', 'total', 'summary', 'how many', 'petition count')):
+    if any(w in msg_lower for w in _STATS_WORDS):
         try:
             stats = models.get_petition_stats_for_chatbot(user_id, user_role, cvo_office)
             return jsonify({'type': 'stats', 'stats': {k: int(v) for k, v in stats.items()}})
         except Exception:
             app.logger.exception('Chatbot stats error')
-            return jsonify({'type': 'text', 'text': 'Unable to fetch statistics right now. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Stats are taking a moment to load. Give it another shot! 🔄'})
 
     # ---- Search by petitioner name ----
     name_match = _re.search(r'(?:search|find|name|petitioner)[:\s]+(.+)', msg_lower)
     if name_match:
         query = name_match.group(1).strip()
         if len(query) < 2:
-            return jsonify({'type': 'text', 'text': 'Please provide at least 2 characters to search by name.'})
+            return jsonify({'type': 'text', 'text': 'Could you give me at least 2 characters to search by name? 🔍'})
         try:
             results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='name')
+            # If name search finds nothing, automatically try all fields (covers e-office/e-receipt typed after "search")
+            if not results:
+                results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='all')
             return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
                             'query': query, 'search_type': 'name'})
         except Exception:
             app.logger.exception('Chatbot search error')
-            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Search hit a snag — please try again! 🔄'})
 
-    # ---- Search by E-Office / efile number ----
+    # ---- Search by E-Office / efile number (keyword prefix) ----
     efile_match = _re.search(r'(?:eoffice|efile|e-office|e-file|file\s*no)[:\s#]*([A-Za-z0-9/_\-\.]+)', msg_lower)
     if efile_match:
         query = efile_match.group(1).strip()
@@ -5478,9 +5792,9 @@ def chatbot_api():
             return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
                             'query': query, 'search_type': 'efile'})
         except Exception:
-            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again! 🔄'})
 
-    # ---- Search by E-Receipt number ----
+    # ---- Search by E-Receipt number (keyword prefix) ----
     ereceipt_match = _re.search(r'(?:ereceipt|e-receipt|receipt)[:\s#]*([A-Za-z0-9/_\-\.]+)', msg_lower)
     if ereceipt_match:
         query = ereceipt_match.group(1).strip()
@@ -5489,7 +5803,7 @@ def chatbot_api():
             return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
                             'query': query, 'search_type': 'ereceipt'})
         except Exception:
-            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again! 🔄'})
 
     # ---- Search by SNO ----
     sno_match = _re.search(r'(?:sno|serial|vig)[:\s#]*([A-Za-z0-9/_\-]+)', msg_lower)
@@ -5500,7 +5814,75 @@ def chatbot_api():
             return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
                             'query': query, 'search_type': 'sno'})
         except Exception:
-            return jsonify({'type': 'text', 'text': 'Search failed. Please try again.'})
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again! 🔄'})
+
+    # ---- Smart bare-number detection (no keyword prefix needed) ----
+    # E-Receipt: starts with 2+ letters then digits/slash  e.g. "ER2024001", "ER/2024/001"
+    bare_ereceipt = _re.match(r'^[a-z]{1,4}[\-/]?\d{4,}', msg_lower)
+    # E-Office: slash-separated path  e.g. "VIG/HQ/2024/01", "vig/cor/2025/100"
+    bare_efile = _re.match(r'^[a-z0-9]+(?:/[a-z0-9]+){2,}', msg_lower)
+
+    if bare_ereceipt and not bare_efile:
+        query = message.strip()
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='ereceipt')
+            if not results:
+                results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='all')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'ereceipt'})
+        except Exception:
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again! 🔄'})
+
+    if bare_efile:
+        query = message.strip()
+        try:
+            results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='efile')
+            if not results:
+                results = models.search_petitions(user_id, user_role, cvo_office, query, search_type='all')
+            return jsonify({'type': 'petitions', 'petitions': _chatbot_format_petitions(results),
+                            'query': query, 'search_type': 'efile'})
+        except Exception:
+            return jsonify({'type': 'text', 'text': 'Search failed. Please try again! 🔄'})
+
+    # ---- Fuzzy intent matching (rapidfuzz) — catches typos like "pendin", "stas", "updtes" ----
+    if _HAS_FUZZ:
+        _FUZZY_MAP = [
+            ('pending', _PENDING_WORDS),
+            ('updates', _UPDATE_WORDS),
+            ('guide',   _GUIDE_WORDS),
+            ('stats',   _STATS_WORDS),
+        ]
+        best_intent_name = None
+        best_score = 0
+        for word in msg_lower.split():
+            for intent_name, keywords in _FUZZY_MAP:
+                for kw in keywords:
+                    if ' ' not in kw:  # single-word keywords only
+                        score = _fuzz.ratio(word, kw)
+                        if score > best_score:
+                            best_score = score
+                            best_intent_name = intent_name
+        if best_score >= 78 and best_intent_name:
+            if best_intent_name == 'pending':
+                try:
+                    petitions = models.get_pending_petitions_for_chatbot(user_id, user_role, cvo_office)
+                    return jsonify({'type': 'pending', 'petitions': _chatbot_format_petitions(petitions), 'role': user_role})
+                except Exception:
+                    pass
+            elif best_intent_name == 'updates':
+                try:
+                    petitions = models.get_recent_updates_for_chatbot(user_id, user_role, cvo_office)
+                    return jsonify({'type': 'updates', 'petitions': _chatbot_format_petitions_with_date(petitions), 'role': user_role})
+                except Exception:
+                    pass
+            elif best_intent_name == 'guide':
+                return jsonify({'type': 'action_guide', 'role': user_role})
+            elif best_intent_name == 'stats':
+                try:
+                    stats = models.get_petition_stats_for_chatbot(user_id, user_role, cvo_office)
+                    return jsonify({'type': 'stats', 'stats': {k: int(v) for k, v in stats.items()}})
+                except Exception:
+                    pass
 
     # ---- Generic fallback: try full-text search ----
     if len(message) >= 3:
@@ -5512,20 +5894,31 @@ def chatbot_api():
         except Exception:
             pass
 
-    return jsonify({
-        'type': 'text',
-        'text': (
-            "I'm not sure what you're looking for. Here are some things you can try:\n\n"
+    # ---- Final conversational fallback ----
+    fallback_replies = [
+        (
+            f"Hmm, I'm not quite sure what you meant, {user_name}. 🤔\n\n"
+            "Here's what I can help with:\n"
             "• **\"pending\"** — petitions waiting for your action\n"
             "• **\"updates\"** — recent activity and status changes\n"
             "• **\"guide\"** — step-by-step workflow for your role\n"
-            "• **\"search Ravi Kumar\"** — search by petitioner name\n"
-            "• **\"ereceipt ER2024001\"** — search by E-Receipt number\n"
-            "• **\"eoffice VIG/HQ/2024/01\"** — search by E-Office file number\n"
-            "• **\"stats\"** — view petition statistics\n"
-            "• **\"help\"** — show all commands"
-        )
-    })
+            "• **\"search Ravi Kumar\"** — find petitions by name\n"
+            "• **\"stats\"** — petition statistics\n"
+            "• **\"help\"** — full command list"
+        ),
+        (
+            f"I didn't quite catch that! 😅 Here are some things to try:\n\n"
+            "• _\"pending\"_ to see what needs your attention\n"
+            "• _\"search Ravi Kumar\"_ to find a petition\n"
+            "• _\"stats\"_ for a quick overview\n"
+            "• _\"help\"_ for all commands"
+        ),
+        (
+            f"Not sure about that one, {user_name}! 🤖 "
+            "Try **\"help\"** to see everything I can do, or ask me to search a petition by name."
+        ),
+    ]
+    return jsonify({'type': 'text', 'text': _random.choice(fallback_replies)})
 
 
 # ========================================

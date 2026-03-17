@@ -9,3 +9,9 @@ uploads/
 *.zip
 *.sql
 .vscode/
+*.log
+server.out.log
+server.err.log
+pytest_out.txt
+*.codex-backup
+test_app_routes.py

@@ -422,7 +422,8 @@
 
     <script src="{{ url_for('static', filename='js/app.js') }}?v=9"></script>
     {% if session.get('user_id') %}
-    <script src="{{ url_for('static', filename='js/chatbot.js') }}?v=20260321"></script>
+    <script>window._nigaaUserId = {{ session.get('user_id') | tojson }};</script>
+    <script src="{{ url_for('static', filename='js/chatbot.js') }}?v=20260322"></script>
     {% endif %}
     <script>
         (function () {

@@ -464,6 +464,7 @@ def test_user_and_upload_validation_paths(monkeypatch):
 
 
 def test_misc_auth_and_api_edge_paths(monkeypatch):
+    monkeypatch.setenv("OTP_ENABLED", "0")
     stub = RichModelsStub()
     monkeypatch.setattr(app_module, "models", stub)
     app_module.app.config["TESTING"] = True

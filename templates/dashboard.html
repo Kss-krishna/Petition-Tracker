@@ -301,11 +301,11 @@
                             {% endif %}
                         </td>
                         <td class="text-truncate" title="{{ p.subject }}">{{ p.subject[:50] }}{% if p.subject|length > 50 %}...{% endif %}</td>
-                        <td><span class="badge badge-type">{{ petition_types.get(p.petition_type, p.petition_type) }}</span></td>
+                        <td><span class="badge badge-type" translate="no">{{ petition_types.get(p.petition_type, p.petition_type) }}</span></td>
                         <td>
-                            <span class="status-badge" style="--status-color: {{ status_colors.get(p.status, '#6b7280') }}">{{ status_labels.get(p.status, p.status) }}</span>
+                            <span class="status-badge" translate="no" data-status="{{ p.status }}" style="--status-color: {{ status_colors.get(p.status, '#6b7280') }}">{{ status_labels.get(p.status, p.status) }}</span>
                             {% if p.is_overdue_escalated %}
-                            <span class="status-badge" style="--status-color:#b91c1c; margin-left:6px;">Overdue</span>
+                            <span class="status-badge" translate="no" data-status="overdue" style="--status-color:#b91c1c; margin-left:6px;" data-i18n="status.overdue">Overdue</span>
                             {% endif %}
                         </td>
                         <td>{{ p.received_date.strftime('%d/%m/%Y') if p.received_date else '-' }}</td>
