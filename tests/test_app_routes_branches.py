@@ -858,8 +858,8 @@ def test_login_page_does_not_embed_captcha_answer_in_html():
         response = client.get("/login")
         assert response.status_code == 200
         html = response.get_data(as_text=True)
-        assert '/auth/login-captcha/' in html
-        assert '<img src="/auth/login-captcha/' in html
+        assert 'data:image/bmp;base64,' in html
+        assert '482753' not in html
 
 
 def test_login_captcha_image_is_served_from_session_state():

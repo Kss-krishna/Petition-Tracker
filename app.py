@@ -947,14 +947,14 @@ def _captcha_bmp_bytes(width, height, buffer):
 
 
 def _build_login_captcha_bmp(challenge_text):
-    width = 210
-    height = 72
+    width = 168
+    height = 56
     bg = (16, 24, 40)
     fg = (248, 250, 252)
     accent = (245, 166, 35)
     alt = (125, 211, 252)
     buffer = [bg] * (width * height)
-    for _ in range(14):
+    for _ in range(8):
         _captcha_draw_line(
             buffer,
             width,
@@ -978,12 +978,12 @@ def _build_login_captcha_bmp(challenge_text):
         '9': 'abcfgd',
     }
     digit = challenge_text
-    digit_width = 22
-    digit_height = 40
-    thickness = 4
-    spacing = 10
-    start_x = 14
-    start_y = 16
+    digit_width = 18
+    digit_height = 32
+    thickness = 3
+    spacing = 8
+    start_x = 10
+    start_y = 12
     for idx, ch in enumerate(digit):
         x = start_x + idx * (digit_width + spacing) + random.randint(-1, 1)
         y = start_y + random.randint(-3, 3)
@@ -1000,7 +1000,7 @@ def _build_login_captcha_bmp(challenge_text):
         color = fg if idx % 2 == 0 else accent
         for seg in segs:
             _captcha_fill_rect(buffer, width, height, *seg_rects[seg], color)
-    for _ in range(28):
+    for _ in range(16):
         _captcha_fill_rect(
             buffer,
             width,
@@ -1016,6 +1016,15 @@ def _build_login_captcha_bmp(challenge_text):
 
 def _login_captcha_image_url(token):
     return f'/auth/login-captcha/{urllib.parse.quote((token or "").strip(), safe="")}'
+
+
+def _login_captcha_image_data_url(token):
+    challenges = _get_login_captcha_challenges_store()
+    challenge = challenges.get((token or '').strip()) or {}
+    image_b64 = (challenge.get('image_b64') or '').strip()
+    if not image_b64:
+        return ''
+    return f'data:image/bmp;base64,{image_b64}'
 
 
 def generate_login_captcha(challenge_text=None, issued_at=None):
@@ -1992,9 +2001,15 @@ def _security_after_request(response):
             "frame-ancestors 'none'"
         )
     # Prevent caching of authenticated / sensitive responses.
-    if 'user_id' in session or request.path.startswith('/api/'):
+    if (
+        'user_id' in session
+        or request.path.startswith('/api/')
+        or request.path == '/login'
+        or request.path.startswith('/auth/login-captcha/')
+    ):
         response.headers.setdefault('Cache-Control', 'no-store, no-cache, must-revalidate, private')
         response.headers.setdefault('Pragma', 'no-cache')
+        response.headers.setdefault('Expires', '0')
     return response
 
 
@@ -2858,6 +2873,7 @@ def login():
             return render_template(
                 'login.html',
                 captcha_image=captcha_image,
+                captcha_image_data=_login_captcha_image_data_url(captcha_token),
                 captcha_token=captcha_token,
                 otp_required=otp_required,
                 otp_mobile_masked=otp_mobile_masked,
@@ -2907,6 +2923,7 @@ def login():
                     return render_template(
                         'login.html',
                         captcha_image=captcha_image,
+                        captcha_image_data=_login_captcha_image_data_url(captcha_token),
                         captcha_token=captcha_token,
                         otp_required=False,
                         otp_mobile_masked='',
@@ -2945,6 +2962,7 @@ def login():
     return render_template(
         'login.html',
         captcha_image=captcha_image,
+        captcha_image_data=_login_captcha_image_data_url(captcha_token),
         captcha_token=captcha_token,
         otp_required=otp_required,
         otp_mobile_masked=otp_mobile_masked,

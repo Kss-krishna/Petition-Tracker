@@ -385,9 +385,9 @@ html[data-theme='dark'] .lp-tt-moon { color: #d0ddff; }
 }
 .lp-captcha-image {
   display: block;
-  width: 170px;
+  width: 150px;
   max-width: 100%;
-  height: 58px;
+  height: 50px;
   border-radius: 10px;
   user-select: none;
   -webkit-user-drag: none;
@@ -998,7 +998,7 @@ html[data-theme='light'] .lp-card-footer { color: #8aaad0; }
             <label for="captcha_answer" data-i18n="login.security_verification">Security Check</label>
             <div class="lp-captcha-row">
               <div class="lp-captcha-box" aria-live="polite">
-                <img src="{{ captcha_image }}" alt="Verification challenge" class="lp-captcha-image">
+                <img src="{{ captcha_image_data or captcha_image }}" alt="Verification challenge" class="lp-captcha-image">
                 <a href="{{ url_for('login', refresh_captcha='1') }}"
                    class="lp-captcha-refresh" title="Refresh captcha" aria-label="Refresh captcha">&#8635;</a>
               </div>
