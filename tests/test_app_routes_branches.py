@@ -271,7 +271,7 @@ def test_login_session_cookie_is_opaque(monkeypatch):
         assert "9000000001" not in set_cookie
 
 
-def test_anonymous_public_pages_do_not_create_server_session(monkeypatch):
+def test_anonymous_public_pages_only_create_session_when_login_captcha_state_is_needed(monkeypatch):
     stub = RichModelsStub()
     monkeypatch.setattr(app_module, "models", stub)
     app_module.app.config["TESTING"] = True
@@ -284,8 +284,11 @@ def test_anonymous_public_pages_do_not_create_server_session(monkeypatch):
 
         login_page = client.get("/login")
         assert login_page.status_code == 200
-        assert "session=" not in (login_page.headers.get("Set-Cookie") or "")
-        assert not app_module.TEST_SERVER_SESSION_STORE
+        assert "session=" in (login_page.headers.get("Set-Cookie") or "")
+        assert len(app_module.TEST_SERVER_SESSION_STORE) == 1
+        session_record = next(iter(app_module.TEST_SERVER_SESSION_STORE.values()))
+        assert session_record.get("user_id") is None
+        assert "login_captcha_challenges" in (session_record.get("data") or {})
 
 
 def test_client_ip_ignores_forwarded_for_by_default(monkeypatch):
