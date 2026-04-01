@@ -511,9 +511,56 @@ body {
 
 .user-admin-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
     gap: 14px;
     padding: 0 1rem 1rem 1rem;
+}
+
+/* Selected user card: two-column side-by-side layout */
+.user-admin-card--selected {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 0;
+    align-items: start;
+}
+
+.user-admin-card--selected .user-admin-profile {
+    border-right: 1px dashed var(--border);
+    padding-right: 14px;
+    margin-right: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.user-admin-card--selected .user-admin-actions {
+    border: none;
+    background: transparent;
+    border-radius: 0;
+}
+
+.user-admin-card--selected .user-admin-actions > summary {
+    display: none;
+}
+
+.user-admin-card--selected .user-action-grid {
+    border-top: none;
+    padding: 0;
+}
+
+@media (max-width: 900px) {
+    .user-admin-card--selected {
+        grid-template-columns: 1fr;
+    }
+    .user-admin-card--selected .user-admin-profile {
+        border-right: none;
+        border-bottom: 1px dashed var(--border);
+        padding-right: 0;
+        margin-right: 0;
+        padding-bottom: 12px;
+        margin-bottom: 4px;
+    }
 }
 
 .user-admin-card {

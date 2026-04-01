@@ -173,6 +173,7 @@
                 data-status="{% if u.is_active %}active{% else %}inactive{% endif %}"
                 data-search="{{ (u.username ~ ' ' ~ u.full_name ~ ' ' ~ role_labels.get(u.role, u.role)) | lower }}"
             >
+                <div class="user-admin-profile">
                 <div class="user-admin-card-head">
                     <div class="user-admin-identity">
                         {% if u.profile_photo %}
@@ -199,6 +200,7 @@
                     <div><span class="user-admin-meta-label">Phone:</span> {{ u.phone or '-' }}</div>
                     <div><span class="user-admin-meta-label">Email:</span> {{ u.email or '-' }}</div>
                 </div>
+                </div><!-- /.user-admin-profile -->
 
                 <details class="user-admin-actions">
                     <summary>Manage User</summary>
@@ -293,7 +295,13 @@ function applyUserSelection() {
     const prompt = document.getElementById('userSelectPrompt');
     const cards = document.querySelectorAll('#userControlGrid .user-admin-card');
     cards.forEach(card => {
-        card.style.display = selectedUser && card.dataset.userId === selectedUser ? '' : 'none';
+        const isSelected = selectedUser && card.dataset.userId === selectedUser;
+        card.style.display = isSelected ? '' : 'none';
+        card.classList.toggle('user-admin-card--selected', !!isSelected);
+        if (isSelected) {
+            const details = card.querySelector('details.user-admin-actions');
+            if (details) details.open = true;
+        }
     });
     if (prompt) {
         prompt.style.display = selectedUser ? 'none' : '';
