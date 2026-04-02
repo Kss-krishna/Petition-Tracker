@@ -214,6 +214,7 @@ LOGIN_CAPTCHA_LENGTH = 6
 LOGIN_CAPTCHA_ALPHABET = '23456789'
 LOGIN_CAPTCHA_USED_TOKENS = {}
 LOGIN_CAPTCHA_CHALLENGES = {}
+LOGIN_OTP_RESEND_COOLDOWN_SECONDS = 60
 VALID_PETITION_TYPES = {
     'bribe',
     'corruption',
@@ -2495,6 +2496,18 @@ def _verify_login_otp(mobile, otp_code):
 def _clear_pending_otp():
     session.pop('otp_pending_user', None)
     session.pop('otp_pending_mobile', None)
+    session.pop('otp_pending_sent_at', None)
+
+
+def _login_otp_resend_wait_seconds(now_ts=None):
+    now_ts = int(time.time() if now_ts is None else now_ts)
+    sent_at = session.get('otp_pending_sent_at')
+    try:
+        sent_at = int(sent_at)
+    except (TypeError, ValueError):
+        return 0
+    remaining = LOGIN_OTP_RESEND_COOLDOWN_SECONDS - max(0, now_ts - sent_at)
+    return max(0, remaining)
 
 
 def _clear_authenticated_session():
@@ -2928,8 +2941,13 @@ def login():
                 _clear_pending_otp()
                 reset_login_captcha()
                 return redirect(url_for('login'))
+            wait_seconds = _login_otp_resend_wait_seconds()
+            if wait_seconds > 0:
+                flash(f'Resend OTP available in {wait_seconds} seconds.', 'warning')
+                return redirect(url_for('login'))
             ok, msg = _send_login_otp(pending_mobile)
             if ok:
+                session['otp_pending_sent_at'] = int(time.time())
                 flash(f'OTP sent to {otp_mobile_masked}.', 'success')
             else:
                 flash(msg, 'danger')
@@ -3052,6 +3070,7 @@ def login():
                     'is_active': bool(user.get('is_active', True)),
                 }
                 session['otp_pending_mobile'] = mobile
+                session['otp_pending_sent_at'] = int(time.time())
                 _clear_login_failures()
                 flash(f'OTP sent to {_mask_mobile(mobile)}.', 'success')
                 return redirect(url_for('login'))
@@ -3069,6 +3088,7 @@ def login():
 
     otp_required = bool(session.get('otp_pending_user') and session.get('otp_pending_mobile'))
     otp_mobile_masked = _mask_mobile(session.get('otp_pending_mobile'))
+    otp_resend_wait_seconds = _login_otp_resend_wait_seconds() if otp_required else 0
     captcha_image = ''
     captcha_token = ''
     captcha_proof = ''
@@ -3083,6 +3103,7 @@ def login():
         captcha_proof=captcha_proof,
         otp_required=otp_required,
         otp_mobile_masked=otp_mobile_masked,
+        otp_resend_wait_seconds=otp_resend_wait_seconds,
     )
 
 

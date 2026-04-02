@@ -437,6 +437,7 @@ html[data-theme='dark'] .lp-tt-moon { color: #d0ddff; }
 }
 .lp-btn-outline:hover { background: rgba(245,166,35,0.08); color: var(--gold); border-color: rgba(245,166,35,0.25); }
 .lp-btn-row { display: flex; gap: 8px; margin-top: 10px; }
+.lp-otp-resend-note { margin-top: 8px; color: var(--text-dim); font-size: 0.86rem; }
 
 /* Secondary link */
 .lp-link {
@@ -961,9 +962,14 @@ html[data-theme='light'] .lp-card-footer { color: #8aaad0; }
           </button>
           <div class="lp-btn-row">
             <button type="submit" name="login_action" value="resend_otp"
-                    class="lp-btn-outline" data-i18n="login.resend_otp">Resend OTP</button>
+                    class="lp-btn-outline" id="loginResendOtpBtn"
+                    {% if otp_resend_wait_seconds|default(0) > 0 %}disabled{% endif %}
+                    data-i18n="login.resend_otp">Resend OTP</button>
             <a href="{{ url_for('login', reset_otp='1') }}"
                class="lp-btn-outline" data-i18n="login.change_login">Change Login</a>
+          </div>
+          <div class="lp-otp-resend-note" id="loginOtpResendNote" {% if otp_resend_wait_seconds|default(0) <= 0 %}hidden{% endif %}>
+            Resend available in <span id="loginOtpCountdown">{{ otp_resend_wait_seconds|default(0) }}</span>s
           </div>
         </form>
 
@@ -1154,6 +1160,24 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.lp-lang-btn').forEach(function(b) {
     b.classList.toggle('lp-lang-active', b.dataset.lang === savedLang);
   });
+
+  var resendBtn = document.getElementById('loginResendOtpBtn');
+  var countdownEl = document.getElementById('loginOtpCountdown');
+  var resendNote = document.getElementById('loginOtpResendNote');
+  var remaining = parseInt(countdownEl ? countdownEl.textContent || '0' : '0', 10);
+  if (resendBtn && countdownEl && resendNote && remaining > 0) {
+    var timer = window.setInterval(function() {
+      remaining -= 1;
+      if (remaining <= 0) {
+        countdownEl.textContent = '0';
+        resendBtn.disabled = false;
+        resendNote.hidden = true;
+        window.clearInterval(timer);
+        return;
+      }
+      countdownEl.textContent = String(remaining);
+    }, 1000);
+  }
 });
 </script>
 {% endblock %}

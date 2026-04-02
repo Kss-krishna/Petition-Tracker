@@ -108,6 +108,7 @@ def test_login_route_otp_and_first_login_branches(monkeypatch):
         with client.session_transaction() as sess:
             sess["otp_pending_user"] = {"id": 1, "full_name": "Tester", "username": "tester", "role": "po"}
             sess["otp_pending_mobile"] = "919999999999"
+            sess["otp_pending_sent_at"] = int(app_module.time.time()) - app_module.LOGIN_OTP_RESEND_COOLDOWN_SECONDS
         assert client.post("/login", data={"login_action": "resend_otp"}).status_code == 302
         assert client.post("/login", data={"login_action": "verify_otp", "otp_code": "abcd"}).status_code == 302
         assert client.post("/login", data={"login_action": "verify_otp", "otp_code": "0000"}).status_code == 302
@@ -200,6 +201,7 @@ def test_login_auxiliary_otp_paths(monkeypatch):
         with client.session_transaction() as sess:
             sess["otp_pending_user"] = {"id": 1, "full_name": "Tester", "username": "tester", "role": "po"}
             sess["otp_pending_mobile"] = "919999999999"
+            sess["otp_pending_sent_at"] = int(app_module.time.time()) - app_module.LOGIN_OTP_RESEND_COOLDOWN_SECONDS
         response = client.post("/login", data={"login_action": "resend_otp"})
         assert response.status_code == 302
 
@@ -214,3 +216,33 @@ def test_login_auxiliary_otp_paths(monkeypatch):
             sess["otp_pending_mobile"] = "919999999999"
         html = client.get("/login").get_data(as_text=True)
         assert "otp" in html.lower()
+
+
+def test_login_resend_otp_cooldown_blocks_immediate_retry(monkeypatch):
+    stub = AuthModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    send_calls = []
+    monkeypatch.setattr(app_module, "_send_login_otp", lambda mobile: send_calls.append(mobile) or (True, None))
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["otp_pending_user"] = {"id": 1, "full_name": "Tester", "username": "tester", "role": "po"}
+            sess["otp_pending_mobile"] = "919999999999"
+            sess["otp_pending_sent_at"] = int(app_module.time.time())
+        response = client.post("/login", data={"login_action": "resend_otp"}, follow_redirects=True)
+        assert response.status_code == 200
+        assert "Resend OTP available in" in response.get_data(as_text=True)
+        assert send_calls == []
+
+
+def test_login_page_shows_resend_otp_countdown():
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["otp_pending_user"] = {"id": 1, "full_name": "Tester", "username": "tester", "role": "po"}
+            sess["otp_pending_mobile"] = "919999999999"
+            sess["otp_pending_sent_at"] = int(app_module.time.time()) - 15
+        html = client.get("/login").get_data(as_text=True)
+        assert "Resend available in" in html
+        assert 'id="loginResendOtpBtn"' in html
