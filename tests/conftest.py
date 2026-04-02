@@ -9,7 +9,14 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 os.environ["SKIP_SCHEMA_UPDATES"] = "1"
-app_module = importlib.import_module("app")
+_APP_MODULE = None
+
+
+def get_app_module():
+    global _APP_MODULE
+    if _APP_MODULE is None:
+        _APP_MODULE = importlib.import_module("app")
+    return _APP_MODULE
 
 
 class ModelsStub(SimpleNamespace):
@@ -34,6 +41,7 @@ class ModelsStub(SimpleNamespace):
 
 @pytest.fixture
 def client(monkeypatch):
+    app_module = get_app_module()
     stub = ModelsStub()
     monkeypatch.setattr(app_module, "models", stub)
     app_module.app.config["TESTING"] = True

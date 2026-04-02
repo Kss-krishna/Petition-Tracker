@@ -1,6 +1,6 @@
 import io
 import time
-from datetime import date
+from datetime import date, datetime
 
 import app as app_module
 
@@ -214,6 +214,7 @@ def _post_login(client, username="u", password="p"):
 def test_auth_dashboard_and_core_views(monkeypatch):
     stub = RichModelsStub()
     monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(app_module, "_is_otp_login_enabled", lambda: False)
     app_module.app.config["TESTING"] = True
     with app_module.app.test_client() as client:
         root_response = client.get("/")
@@ -603,6 +604,271 @@ def test_petition_new_ip_limit_allows_parallel_users_until_ip_threshold(monkeypa
         assert third.status_code == 429
 
 
+def test_petitions_import_routes_and_upload_paths(monkeypatch):
+    stub = RichModelsStub()
+    stub.get_all_users = lambda: [
+        {"id": 5, "username": "cvo.user", "role": "cvo_apspdcl", "is_active": True},
+        {"id": 6, "username": "insp.user", "role": "inspector", "is_active": True},
+        {"id": 7, "username": "cmd.user", "role": "cmd_apspdcl", "is_active": True},
+    ]
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        login_as(client, role="po")
+        page = client.get("/petitions/import")
+        assert page.status_code == 200
+        assert "assigned_inspector_username" in page.get_data(as_text=True)
+
+        template = client.get("/petitions/import/template")
+        assert template.status_code == 200
+        assert template.mimetype == "text/csv"
+        assert "attachment; filename=petition_bulk_import_template.csv" in template.headers["Content-Disposition"]
+        assert "received_date,received_at,target_cvo" in template.get_data(as_text=True)
+
+        assert client.post("/petitions/import/upload", data={}).status_code == 302
+
+        monkeypatch.setattr(app_module, "_parse_tabular_upload_rows", lambda *_a, **_k: [])
+        assert client.post(
+            "/petitions/import/upload",
+            data={"petitions_file": (io.BytesIO(b"x"), "petitions.csv")},
+            content_type="multipart/form-data",
+        ).status_code == 302
+
+        def raising_parser(*_a, **_k):
+            raise ValueError("bad upload")
+
+        monkeypatch.setattr(app_module, "_parse_tabular_upload_rows", raising_parser)
+        assert client.post(
+            "/petitions/import/upload",
+            data={"petitions_file": (io.BytesIO(b"x"), "petitions.xlsx")},
+            content_type="multipart/form-data",
+        ).status_code == 302
+
+        monkeypatch.setattr(
+            app_module,
+            "_parse_tabular_upload_rows",
+            lambda *_a, **_k: [
+                {
+                    "received_date": "2026-02-17",
+                    "received_at": "jmd_office",
+                    "target_cvo": "headquarters",
+                    "petitioner_name": "Imported One",
+                    "contact": "9999999999",
+                    "place": "Hyd",
+                    "subject": "Imported subject",
+                    "petition_type": "bribe",
+                    "source_of_petition": "govt",
+                    "govt_institution_type": "bad",
+                    "enquiry_type": "preliminary",
+                    "permission_request_type": "direct_enquiry",
+                    "requires_permission": "no",
+                    "permission_status": "",
+                    "status": "permission_rejected",
+                    "assigned_inspector_username": "insp.user",
+                    "remarks": "row one",
+                },
+                {
+                    "received_date": "2026-02-18",
+                    "received_at": "cvo_apcpdcl_vijayawada",
+                    "target_cvo": "",
+                    "petitioner_name": "Imported Two",
+                    "contact": "8888888888",
+                    "place": "VJA",
+                    "subject": "Imported subject 2",
+                    "petition_type": "other",
+                    "source_of_petition": "public_individual",
+                    "govt_institution_type": "",
+                    "enquiry_type": "detailed",
+                    "permission_request_type": "permission_required",
+                    "requires_permission": "yes",
+                    "permission_status": "pending",
+                    "status": "bad_status",
+                    "assigned_inspector_username": "missing.user",
+                    "remarks": "row two",
+                },
+            ],
+        )
+        response = client.post(
+            "/petitions/import/upload",
+            data={"petitions_file": (io.BytesIO(b"ok"), "petitions.csv"), "_return_to": "help"},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/help")
+        call_names = [name for name, _ in stub.calls]
+        assert call_names.count("create_petition") == 2
+        assert call_names.count("update_imported_petition_state") == 2
+
+
+def test_petition_view_with_files_and_super_admin_handler_scope(monkeypatch):
+    stub = RichModelsStub()
+    seen = {"cvo_lookup": 0}
+    stub.petition = {
+        "id": 1,
+        "requires_permission": False,
+        "status": "permission_approved",
+        "efile_no": "EO-1",
+        "enquiry_type": "preliminary",
+        "target_cvo": "apspdcl",
+        "current_handler_id": 42,
+        "assigned_inspector_id": 8,
+        "ereceipt_file": "ereceipt.pdf",
+        "conclusion_file": "conclusion.pdf",
+    }
+    stub.get_petition_tracking = lambda _pid: [
+        {
+            "action": "Inspector Requested Detailed Enquiry Permission",
+            "attachment_file": None,
+            "created_at": None,
+        },
+        {
+            "action": "Assigned to Inspector",
+            "attachment_file": "memo.pdf",
+            "from_name": "CVO Officer",
+            "created_at": datetime(2026, 2, 17, 10, 0),
+            "comments": "Please enquire",
+        },
+    ]
+    stub.get_enquiry_report = lambda _pid: {
+        "id": 99,
+        "report_file": "report.pdf",
+        "cvo_consolidated_report_file": "consolidated.pdf",
+        "cmd_action_report_file": "cmd.pdf",
+    }
+    stub.get_inspectors_by_cvo = lambda _uid: seen.__setitem__("cvo_lookup", seen["cvo_lookup"] + 1) or [{"id": 8, "full_name": "Inspector"}]
+    stub.get_user_by_id = lambda uid: {
+        "id": uid,
+        "role": "cvo_apspdcl",
+        "username": "cvo.user",
+        "full_name": "CVO Officer",
+        "cvo_office": "apspdcl",
+        "phone": None,
+        "email": None,
+        "profile_photo": None,
+        "session_version": 1,
+        "is_active": True,
+    }
+    stub.get_sla_evaluation_rows = lambda _rows: [
+        {"is_beyond_sla_for_po": True, "closed_at": None}
+    ]
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(app_module, "_uploaded_file_exists", lambda _base, name: name != "cmd.pdf")
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="super_admin")
+        response = client.get("/petitions/1")
+        assert response.status_code == 200
+        assert seen["cvo_lookup"] == 1
+
+
+def test_petition_view_guard_and_cvo_scope_branches(monkeypatch):
+    stub = RichModelsStub()
+    stub.get_petition_by_id = lambda _pid: None
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        login_as(client, role="po")
+        monkeypatch.setattr(app_module, "_can_access_petition", lambda petition_id: False)
+        assert client.get("/petitions/1").status_code == 302
+
+        monkeypatch.setattr(app_module, "_can_access_petition", lambda petition_id: True)
+        assert client.get("/petitions/1").status_code == 302
+
+    stub.petition = {
+        "id": 1,
+        "requires_permission": False,
+        "status": "forwarded_to_cvo",
+        "efile_no": None,
+        "enquiry_type": "detailed",
+        "target_cvo": "apspdcl",
+        "current_handler_id": None,
+    }
+    stub.get_petition_tracking = lambda _pid: []
+    stub.get_enquiry_report = lambda _pid: None
+    stub.get_inspectors_by_cvo = lambda _uid: [{"id": 8, "full_name": "Inspector"}]
+    stub.get_sla_evaluation_rows = lambda _rows: (_ for _ in ()).throw(Exception("sla fail"))
+    stub.get_user_by_id = lambda _uid: {
+        "id": _uid,
+        "role": "cvo_apspdcl",
+        "username": "cvo.user",
+        "full_name": "CVO User",
+        "cvo_office": "apspdcl",
+        "phone": None,
+        "email": None,
+        "profile_photo": None,
+        "session_version": 1,
+        "is_active": True,
+    }
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(app_module, "_can_access_petition", lambda petition_id: True)
+    with app_module.app.test_client() as client:
+        login_as(client, role="cvo_apspdcl")
+        assert client.get("/petitions/1").status_code in (200, 302)
+
+
+def test_petition_action_additional_success_branches(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        stub.petition = {"id": 1, "status": "forwarded_to_cvo", "requires_permission": False}
+        assert _post_action(client, "cvo_apspdcl", "cvo_set_enquiry_mode", {"permission_request_type": "direct_enquiry", "enquiry_type_decision": "preliminary"}).status_code == 302
+
+        stub.petition = {"id": 1, "status": "forwarded_to_cvo", "requires_permission": False}
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "cvo_route_petition",
+            {
+                "permission_request_type": "direct_enquiry",
+                "enquiry_type_decision": "detailed",
+                "inspector_id": "8",
+                "assignment_memo_file": _pdf("memo.pdf"),
+            },
+            multipart=True,
+        ).status_code == 302
+
+        stub.petition = {"id": 1, "status": "forwarded_to_cvo", "requires_permission": False}
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "send_receipt_to_po",
+            {
+                "permission_file": _pdf("permission.pdf"),
+            },
+            multipart=True,
+        ).status_code == 302
+
+        stub.petition = {"id": 1, "status": "enquiry_report_submitted", "source_of_petition": "media"}
+        assert _post_action(client, "cvo_apspdcl", "cvo_direct_lodge", {"lodge_remarks": "Media lodge"}).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "status": "forwarded_to_cvo",
+            "target_cvo": "apspdcl",
+            "received_at": "cvo_apspdcl_tirupathi",
+            "enquiry_type": "detailed",
+            "efile_no": None,
+        }
+        stub.get_sla_evaluation_rows = lambda _rows: [{"is_beyond_sla_for_po": True, "closed_at": None}]
+        assert _post_action(
+            client,
+            "po",
+            "po_beyond_sla_send_to_cvo",
+            {"target_cvo": "apspdcl", "efile_no": "EO-9", "permission_file": _pdf("beyond.pdf")},
+            multipart=True,
+        ).status_code == 302
+
+        call_names = [name for name, _ in stub.calls]
+        assert "cvo_mark_direct_enquiry" in call_names
+        assert "assign_to_inspector" in call_names
+        assert "cvo_send_receipt_to_po" in call_names
+        assert "cvo_direct_lodge_petition" in call_names
+        assert "approve_permission" in call_names
+
+
 def test_system_settings_page_and_save(monkeypatch):
     stub = RichModelsStub()
     stub.system_settings = {
@@ -825,6 +1091,206 @@ def test_profile_password_change_rejects_wrong_current_password(monkeypatch):
         assert b"Current password is incorrect." in response.data
 
 
+def test_help_page_admin_upload_toggle_and_external_url(monkeypatch):
+    stub = RichModelsStub()
+    stub.list_help_resources = lambda active_only=False: [
+        {
+            "id": 1,
+            "title": "Manual",
+            "resource_type": "manual",
+            "storage_kind": "upload",
+            "file_name": "manual.pdf",
+            "mime_type": "application/pdf",
+            "is_active": True,
+        },
+        {
+            "id": 2,
+            "title": "Video",
+            "resource_type": "video",
+            "storage_kind": "external_url",
+            "external_url": "https://example.com/video",
+            "file_name": None,
+            "mime_type": None,
+            "is_active": False,
+        },
+    ]
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="po")
+        assert client.get("/help-center").status_code == 302
+        page = client.get("/help")
+        assert page.status_code == 200
+
+        assert client.post("/help", data={"action": "toggle_active", "resource_id": "", "activate": "1"}).status_code == 302
+        assert client.post("/help", data={"action": "toggle_active", "resource_id": "1", "activate": "1"}).status_code == 302
+        assert any(name == "set_help_resource_active" for name, _ in stub.calls)
+
+        assert client.post("/help", data={"title": "", "resource_type": "manual", "storage_kind": "upload"}).status_code == 302
+        assert client.post("/help", data={"title": "Guide", "resource_type": "bad", "storage_kind": "upload"}).status_code == 302
+        assert client.post("/help", data={"title": "Guide", "resource_type": "manual", "storage_kind": "bad"}).status_code == 302
+        assert client.post("/help", data={"title": "Guide", "resource_type": "manual", "storage_kind": "external_url", "external_url": "notaurl"}).status_code == 302
+
+        assert client.post(
+            "/help",
+            data={"title": "External Guide", "resource_type": "manual", "storage_kind": "external_url", "external_url": "https://example.com/guide", "display_order": "2"},
+        ).status_code == 302
+        assert any(name == "create_help_resource" for name, _ in stub.calls)
+
+
+def test_signup_reset_approval_and_rejection_routes(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="super_admin")
+        assert client.post("/users/signup-requests/4/approve").status_code == 302
+        assert client.post("/users/signup-requests/4/reject", data={"decision_notes": "no"}).status_code == 302
+        assert client.post("/users/password-reset-requests/6/approve").status_code == 302
+        assert client.post("/users/password-reset-requests/6/reject", data={"decision_notes": "reject"}).status_code == 302
+
+        call_names = [name for name, _ in stub.calls]
+        assert "approve_signup_request" in call_names
+        assert "reject_signup_request" in call_names
+        assert "approve_password_reset_request" in call_names
+        assert "reject_password_reset_request" in call_names
+
+
+def test_user_update_contact_and_profile_photo_paths(monkeypatch):
+    stub = RichModelsStub()
+    user_rows = {
+        1: {
+            "id": 1,
+            "role": "super_admin",
+            "username": "tester",
+            "full_name": "Tester",
+            "cvo_office": None,
+            "phone": "9999999999",
+            "email": "old@example.com",
+            "profile_photo": "old.png",
+            "session_version": 1,
+            "is_active": True,
+        }
+    }
+    stub.get_user_by_id = lambda uid: dict(user_rows.get(uid)) if uid in user_rows else None
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="super_admin")
+        assert client.post("/users/1/update-contact", data={"phone": "bad"}).status_code == 302
+        assert client.post("/users/1/update-contact", data={"phone": "9999999999", "email": "bad"}).status_code == 302
+        assert client.post("/users/77/update-contact", data={"phone": "9999999999", "email": "a@b.com"}).status_code == 302
+
+        response = client.post(
+            "/users/1/update-contact",
+            data={"phone": "9999999999", "email": "a@b.com", "remove_photo": "on"},
+        )
+        assert response.status_code == 302
+        call_names = [name for name, _ in stub.calls]
+        assert "update_user_profile_info" in call_names
+        assert "set_user_profile_photo" in call_names
+
+        response = client.post(
+            "/users/1/update-contact",
+            data={"phone": "9999999999", "email": "a@b.com", "profile_photo": (io.BytesIO(b"png"), "avatar.png")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 302
+
+
+def test_api_dashboard_and_petitioner_helpers(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(
+        app_module,
+        "get_petitions_for_user_cached",
+        lambda *_a, **_k: [
+            {
+                "id": 1,
+                "sno": "VIG/1",
+                "petitioner_name": "Ravi Kumar",
+                "subject": "Transformer issue",
+                "status": "received",
+                "received_date": date(2026, 2, 17),
+                "petition_type": "electrical_accident",
+                "source_of_petition": "media",
+                "received_at": "jmd_office",
+                "target_cvo": "apspdcl",
+                "assigned_inspector_id": 8,
+                "inspector_name": "Inspector One",
+            },
+            {
+                "id": 2,
+                "sno": "VIG/2",
+                "petitioner_name": "Ravi Kumar",
+                "subject": "Billing issue",
+                "status": "closed",
+                "received_date": date(2026, 2, 18),
+                "petition_type": "bribe",
+                "source_of_petition": "public_individual",
+                "received_at": "jmd_office",
+                "target_cvo": "apspdcl",
+                "assigned_inspector_id": 8,
+                "inspector_name": "Inspector One",
+            },
+            {
+                "id": 3,
+                "sno": "VIG/3",
+                "petitioner_name": "Anonymous",
+                "subject": "Ignore",
+                "status": "closed",
+                "received_date": date(2026, 2, 18),
+                "petition_type": "other",
+                "source_of_petition": "public_individual",
+                "received_at": "jmd_office",
+                "target_cvo": "apspdcl",
+            },
+        ],
+    )
+    monkeypatch.setattr(app_module, "_build_petitioner_profile_payload", lambda petitions, name: {"name": name, "total": len(petitions)})
+    stub.get_latest_enquiry_report_accident_details = lambda ids: {1: {"accident_type": "fatal", "deceased_category": "departmental", "departmental_type": "regular", "deceased_count": 1}}
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="po")
+        analytics = client.get("/api/dashboard-analytics?petition_type=bribe")
+        assert analytics.status_code == 200
+        assert "analytics" in analytics.get_json()
+
+        short = client.get("/api/petitioner-suggestions?q=r")
+        assert short.status_code == 200
+        assert short.get_json()["items"] == []
+
+        suggestions = client.get("/api/petitioner-suggestions?q=ra")
+        assert suggestions.status_code == 200
+        assert suggestions.get_json()["items"][0]["name"] == "Ravi Kumar"
+
+        missing = client.get("/api/petitioner-profile")
+        assert missing.status_code == 400
+
+        profile = client.get("/api/petitioner-profile?name=Ravi Kumar")
+        assert profile.status_code == 200
+        assert profile.get_json()["name"] == "Ravi Kumar"
+
+
+def test_api_inspectors_forbidden_and_profile_photo_missing(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(
+        app_module,
+        "_can_access_cvo_scope",
+        lambda cvo_id: False if cvo_id == 99 else True,
+    )
+    monkeypatch.setattr(app_module, "_uploaded_file_exists", lambda _base, _name: False)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        login_as(client, role="data_entry")
+        forbidden = client.get("/api/inspectors/99")
+        assert forbidden.status_code == 403
+
+        photo = client.get("/profile-photos/missing.png")
+        assert photo.status_code == 404
+
+
 def test_misc_auth_and_api_edge_paths(monkeypatch):
     monkeypatch.setenv("OTP_ENABLED", "0")
     stub = RichModelsStub()
@@ -872,7 +1338,84 @@ def test_login_captcha_image_is_served_from_session_state():
         assert response.headers["Cache-Control"].startswith("no-store")
 
 
+def test_login_page_generated_captcha_survives_to_next_request(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(stub, "authenticate_user", lambda _u, _p: None)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        response = client.get("/login")
+        assert response.status_code == 200
+        with client.session_transaction() as sess:
+            challenges = dict(sess.get("login_captcha_challenges") or {})
+            assert challenges
+            captcha_token = next(reversed(challenges))
+            challenge = dict(challenges[captcha_token])
+            challenge["answer_digest"] = app_module._login_captcha_answer_digest(captcha_token, "482753")
+            challenge["image_b64"] = app_module.base64.b64encode(
+                app_module._build_login_captcha_bmp("482753")
+            ).decode("ascii")
+            challenges[captcha_token] = challenge
+            sess["login_captcha_challenges"] = challenges
+        response = client.post(
+            "/login",
+            data={
+                "username": "wrong-user",
+                "password": "wrong-pass",
+                "captcha_answer": "482753",
+                "captcha_token": captcha_token,
+            },
+        )
+        html = response.get_data(as_text=True)
+        assert "Captcha answer is incorrect." not in html
+        assert "Invalid username or password." in html
+
+
+def test_login_page_captcha_validates_even_if_challenge_store_is_cleared(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(stub, "authenticate_user", lambda _u, _p: None)
+    app_module.app.config["TESTING"] = True
+    with app_module.app.test_client() as client:
+        response = client.get("/login")
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        token_match = app_module.re.search(r'name="captcha_token" value="([^"]+)"', html)
+        proof_match = app_module.re.search(r'name="captcha_proof" value="([^"]+)"', html)
+        assert token_match
+        assert proof_match
+        captcha_token = token_match.group(1)
+        captcha_proof = proof_match.group(1)
+        with client.session_transaction() as sess:
+            challenges = dict(sess.get("login_captcha_challenges") or {})
+            assert challenges
+            challenge = dict(challenges[captcha_token])
+            challenge["answer_digest"] = app_module._login_captcha_answer_digest(captcha_token, "482753")
+            challenge["image_b64"] = app_module.base64.b64encode(
+                app_module._build_login_captcha_bmp("482753")
+            ).decode("ascii")
+            challenge["proof"] = app_module._build_login_captcha_proof(captcha_token, "482753", challenge["issued_at"])
+            challenges[captcha_token] = challenge
+            sess["login_captcha_challenges"] = {}
+            captcha_proof = challenge["proof"]
+        response = client.post(
+            "/login",
+            data={
+                "username": "wrong-user",
+                "password": "wrong-pass",
+                "captcha_answer": "482753",
+                "captcha_token": captcha_token,
+                "captcha_proof": captcha_proof,
+            },
+        )
+        html = response.get_data(as_text=True)
+        assert "Captcha answer is incorrect." not in html
+        assert "Invalid username or password." in html
+
+
 def test_request_entity_too_large_rejects_external_referer(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
     app_module.app.config["TESTING"] = True
     with app_module.app.test_client() as client:
         login_as(client, role="data_entry")
@@ -1024,6 +1567,251 @@ def test_petition_action_negative_matrix(monkeypatch):
         assert _post_action(client, "po", "close", {"comments": "x"}).status_code == 302
 
 
+def test_submit_report_electrical_accident_matrix(monkeypatch):
+    stub = RichModelsStub()
+    stub.petition = {
+        "id": 1,
+        "requires_permission": False,
+        "status": "assigned_to_inspector",
+        "efile_no": None,
+        "enquiry_type": "preliminary",
+        "petition_type": "electrical_accident",
+        "target_cvo": "apspdcl",
+    }
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "", "deceased_category": "departmental", "deceased_count": "1", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "", "deceased_count": "1", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "departmental", "deceased_count": "0", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "departmental", "departmental_type": "", "deceased_count": "1", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "non_departmental", "non_departmental_type": "", "deceased_count": "1", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "general_public", "deceased_count": "1", "general_public_count": "0", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {"report_text": "ok", "recommendation": "ok", "accident_type": "fatal", "deceased_category": "animals", "deceased_count": "1", "animals_count": "0", "report_file": _pdf("r.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "inspector",
+            "submit_report",
+            {
+                "report_text": "ok",
+                "recommendation": "ok",
+                "accident_type": "fatal",
+                "deceased_category": "non_departmental",
+                "non_departmental_type": "private_electricians",
+                "deceased_count": "1",
+                "report_file": _pdf("r.pdf"),
+            },
+            multipart=True,
+        ).status_code == 302
+
+
+def test_petition_action_success_with_upload_variants(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "forwarded_to_cvo",
+            "efile_no": None,
+            "enquiry_type": "preliminary",
+            "target_cvo": "apspdcl",
+            "received_at": "jmd_office",
+            "source_of_petition": "media",
+        }
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "send_receipt_to_po",
+            {"permission_file": _pdf("perm.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "cvo_route_petition",
+            {
+                "permission_request_type": "direct_enquiry",
+                "enquiry_type_decision": "detailed",
+                "inspector_id": "8",
+                "assignment_memo_file": _pdf("memo.pdf"),
+            },
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "cvo_set_enquiry_mode",
+            {"permission_request_type": "direct_enquiry", "enquiry_type_decision": "preliminary"},
+        ).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": True,
+            "status": "sent_for_permission",
+            "efile_no": None,
+            "enquiry_type": "preliminary",
+            "target_cvo": "apspdcl",
+            "received_at": "jmd_office",
+        }
+        assert _post_action(
+            client,
+            "po",
+            "approve_permission",
+            {"target_cvo": "apspdcl", "organization": "aptransco", "enquiry_type_decision": "preliminary", "efile_no": "EO-10"},
+        ).status_code == 302
+        assert _post_action(client, "po", "reject_permission", {"comments": "Rejected for record"}).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": True,
+            "status": "permission_approved",
+            "efile_no": None,
+            "enquiry_type": "detailed",
+            "assigned_inspector_id": 8,
+        }
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "assign_inspector",
+            {"inspector_id": "8", "assignment_memo_file": _pdf("assign.pdf")},
+            multipart=True,
+        ).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "enquiry_report_submitted",
+            "efile_no": None,
+            "enquiry_type": "preliminary",
+            "source_of_petition": "media",
+        }
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "request_detailed_enquiry",
+            {"cvo_comments": "Need detailed", "prima_facie_file": _pdf("prima.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "upload_consolidated_report",
+            {"consolidated_report_file": _pdf("consolidated.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "cvo_comments",
+            {"cvo_comments": "Forwarding", "consolidated_report_file": _pdf("review.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "cvo_apspdcl",
+            "cvo_direct_lodge",
+            {"lodge_remarks": "Media closed at CVO"},
+        ).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "forwarded_to_po",
+            "efile_no": None,
+            "enquiry_type": "preliminary",
+        }
+        assert _post_action(
+            client,
+            "po",
+            "give_conclusion",
+            {"efile_no": "EO-20", "final_conclusion": "Final", "instructions": "Act", "conclusion_file": _pdf("conclusion.pdf")},
+            multipart=True,
+        ).status_code == 302
+        assert _post_action(
+            client,
+            "po",
+            "send_to_cmd",
+            {"efile_no": "EO-21", "cmd_instructions": "Take action", "cmd_handler_id": "6"},
+        ).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "action_instructed",
+            "efile_no": "EO-30",
+        }
+        assert _post_action(
+            client,
+            "cmd_apspdcl",
+            "cmd_submit_action_report",
+            {"action_taken": "Completed", "action_report_file": _pdf("action.pdf")},
+            multipart=True,
+        ).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "forwarded_to_po",
+            "efile_no": None,
+        }
+        assert _post_action(client, "po", "po_lodge", {"lodge_remarks": "Lodge", "efile_no": "EO-40"}).status_code == 302
+        assert _post_action(client, "po", "po_direct_lodge", {"lodge_remarks": "Direct lodge", "efile_no": "EO-41"}).status_code == 302
+
+        stub.petition = {
+            "id": 1,
+            "requires_permission": False,
+            "status": "action_taken",
+            "efile_no": "EO-42",
+        }
+        assert _post_action(client, "po", "close", {"comments": "Closed finally"}).status_code == 302
+
+
 def test_exception_branches_in_actions_and_admin_routes(monkeypatch):
     stub = RichModelsStub()
     monkeypatch.setattr(app_module, "models", stub)
@@ -1057,6 +1845,163 @@ def test_exception_branches_in_actions_and_admin_routes(monkeypatch):
                 "options_text": "a|A\nb|B",
             },
         ).status_code == 302
+
+
+def test_help_profile_and_admin_positive_flows(monkeypatch):
+    stub = RichModelsStub()
+    monkeypatch.setattr(app_module, "models", stub)
+    monkeypatch.setattr(app_module, "ensure_upload_dirs", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "validate_profile_photo_upload",
+        lambda upload, user_id: (True, "profile/test.png", None),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "_save_uploaded_file",
+        lambda upload, base_dir, file_name, label, use_date_subdir=False: (True, file_name),
+    )
+    app_module.app.config["TESTING"] = True
+
+    with app_module.app.test_client() as client:
+        login_as(client, role="super_admin")
+        response = client.post(
+            "/help",
+            data={
+                "title": "Guide",
+                "resource_type": "manual",
+                "storage_kind": "external_url",
+                "external_url": "https://example.com/guide",
+                "display_order": "2",
+            },
+        )
+        assert response.status_code == 302
+
+        response = client.post(
+            "/help",
+            data={
+                "title": "PDF Guide",
+                "resource_type": "manual",
+                "storage_kind": "upload",
+                "display_order": "1",
+                "resource_file": _pdf("guide.pdf"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 302
+
+        response = client.post(
+            "/help",
+            data={"action": "toggle_active", "resource_id": "4", "activate": "1"},
+        )
+        assert response.status_code == 302
+
+        stub.user = {
+            "id": 1,
+            "username": "tester",
+            "full_name": "Tester Name",
+            "role": "super_admin",
+            "cvo_office": None,
+            "phone": "9999999999",
+            "email": "t@example.com",
+            "profile_photo": None,
+            "session_version": 1,
+            "is_active": True,
+            "must_change_password": False,
+        }
+        response = client.post(
+            "/profile",
+            data={
+                "full_name": "Tester Prime",
+                "username": "tester_new",
+                "phone": "9999999999",
+                "email": "new@example.com",
+                "current_password": "oldpass",
+                "new_password": "StrongPass@9",
+                "confirm_password": "StrongPass@9",
+                "profile_photo": _pdf("photo.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 302
+
+        monkeypatch.setattr(app_module, "get_effective_form_field_configs", lambda: {})
+        response = client.post(
+            "/form-management",
+            data={
+                "action": "add_field",
+                "new_form_key": "deo_petition",
+                "new_field_key": "new_field",
+                "new_label": "New Field",
+                "new_field_type": "text",
+                "new_is_required": "on",
+            },
+        )
+        assert response.status_code == 302
+
+        monkeypatch.setattr(
+            app_module,
+            "get_effective_form_field_configs",
+            lambda: {
+                "deo_petition.petition_type": {
+                    "label": "Petition Type",
+                    "type": "select",
+                    "required": False,
+                    "options": [{"value": "existing", "label": "Existing"}],
+                }
+            },
+        )
+        response = client.post(
+            "/form-management",
+            data={
+                "form_key": "deo_petition",
+                "field_key": "petition_type",
+                "label": "Petition Type",
+                "field_type": "select",
+                "is_required": "on",
+                "options_text": "bribe|Bribe\nother|Other",
+            },
+        )
+        assert response.status_code == 302
+
+        response = client.post(
+            "/system-settings",
+            data={
+                key: str(meta["min"])
+                for key, meta in app_module.SYSTEM_SETTING_DEFINITIONS.items()
+            },
+        )
+        assert response.status_code == 302
+
+        csv_bytes = io.BytesIO(
+            b"username,full_name,role,cvo_office,assigned_cvo_username,phone,email\n"
+            b"ins_one,Inspector One,inspector,apspdcl,cvo1,9999999999,ins1@example.com\n"
+            b"deo_one,Data Entry,data_entry,apspdcl,,9999999998,deo@example.com\n"
+        )
+        response = client.post(
+            "/users/upload",
+            data={"users_file": (csv_bytes, "users.csv")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 302
+
+        response = client.post(
+            "/users/5/edit",
+            data={
+                "full_name": "Officer Updated",
+                "role": "inspector",
+                "cvo_office": "apspdcl",
+                "assigned_cvo_id": "2",
+                "phone": "9999999999",
+                "email": "updated@example.com",
+                "password": "StrongPass@9",
+            },
+        )
+        assert response.status_code == 302
+
+        assert client.post("/users/5/reset-password").status_code == 302
+        assert client.post("/users/5/reset-username", data={"new_username": "user_renamed"}).status_code == 302
+        assert client.post("/users/5/update-name", data={"full_name": "Officer Final"}).status_code == 302
 
         stub.fail_methods.update({"toggle_user_status", "update_user", "set_user_password", "set_username", "update_user_full_name", "map_inspector_to_cvo"})
         assert client.post("/users/1/toggle").status_code == 302

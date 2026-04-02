@@ -26,6 +26,13 @@ if load_dotenv:
 else:
     _load_env_file_fallback(_ENV_PATH)
 
+
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
+
 class Config:
     def __init__(self):
         app_root = Path(__file__).resolve().parent
@@ -73,7 +80,7 @@ class Config:
             resolved_storage_path = (app_root / storage_path).resolve()
         self.UPLOAD_BASE_DIR = str(resolved_storage_path)
         self.MAX_UPLOAD_SIZE_MB = int(os.environ.get('MAX_UPLOAD_SIZE_MB', '10'))
-        self.SESSION_COOKIE_SECURE = self.IS_PRODUCTION
+        self.SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', self.IS_PRODUCTION)
         self.SESSION_LIFETIME_MINUTES = int(os.environ.get('SESSION_LIFETIME_MINUTES', '120'))
         self.LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('LOGIN_RATE_LIMIT_WINDOW_SECONDS', '600'))
         self.LOGIN_RATE_LIMIT_MAX_ATTEMPTS = int(os.environ.get('LOGIN_RATE_LIMIT_MAX_ATTEMPTS', '8'))

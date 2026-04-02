@@ -7,7 +7,7 @@ Covers:
   C. Forgot-Password Step 2 – verify OTP     (/auth/forgot-password/verify POST)
   D. Forgot-Password Resend OTP              (/auth/forgot-password/resend-otp POST)
   E. Forgot-Password Step 3 – set password   (/auth/forgot-password/set GET+POST)
-  F. Super-Admin special paths (no OTP)
+  F. Super-Admin recovery paths (OTP via registered phone)
   G. Security / session-state edge cases
   H. login_required guard for force_change_user_id in session
 """
@@ -287,6 +287,29 @@ class TestFirstLoginSetup:
         }, follow_redirects=True)
         assert r.status_code in (200, 302)
 
+    def test_super_admin_first_login_requires_phone(self, client):
+        _set_session(client, force_change_user_id=1, force_change_username="superadmin",
+                     force_change_role="super_admin")
+        r = client.post("/auth/first-login-setup", data={
+            "new_password": VALID_PASSWORD,
+            "confirm_password": VALID_PASSWORD,
+            "phone": "",
+        }, follow_redirects=True)
+        assert r.status_code in (200, 302)
+
+    def test_super_admin_first_login_saves_password_and_phone(self, client):
+        _set_session(client, force_change_user_id=1, force_change_username="superadmin",
+                     force_change_role="super_admin")
+        r = client.post("/auth/first-login-setup", data={
+            "new_password": VALID_PASSWORD,
+            "confirm_password": VALID_PASSWORD,
+            "phone": "9000000001",
+        }, follow_redirects=False)
+        assert r.status_code == 302
+        assert "/login" in r.headers["Location"]
+        assert any(c == ("update_password_and_phone", 1, VALID_PASSWORD, "9000000001")
+                   for c in client.stub.calls)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # B. FORGOT-PASSWORD STEP 1 – /auth/forgot-password
@@ -542,8 +565,7 @@ class TestForgotPasswordSet:
         })
         sess = _get_session(client)
         for key in ("pw_reset_user_id", "pw_reset_username",
-                    "pw_reset_mobile", "pw_reset_otp_verified",
-                    "pw_reset_is_super_admin"):
+                    "pw_reset_mobile", "pw_reset_otp_verified"):
             assert key not in sess
 
     def test_post_model_error_shows_error(self, client, monkeypatch):
@@ -566,41 +588,30 @@ class TestForgotPasswordSet:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# F. SUPER-ADMIN SPECIAL PATH (no OTP)
+# F. SUPER-ADMIN RECOVERY PATH (OTP VIA PHONE)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestSuperAdminForgotPassword:
 
-    def test_super_admin_bypasses_otp_goes_to_set(self, client, monkeypatch):
+    def test_super_admin_goes_to_verify_otp_when_phone_exists(self, client, monkeypatch):
         patch_otp(monkeypatch)
         monkeypatch.setattr(app_module.models, "get_user_by_username",
                             lambda u: SUPER_ADMIN)
         r = client.post("/auth/forgot-password", data={"fp_username": "superadmin"})
-        assert r.status_code == 302
-        assert "forgot-password/set" in r.headers["Location"]
+        assert r.status_code == 200
+        assert b"Enter OTP" in r.data or b"OTP" in r.data
 
-    def test_super_admin_otp_verified_flag_set(self, client, monkeypatch):
+    def test_super_admin_reset_sets_mobile_session_state(self, client, monkeypatch):
         patch_otp(monkeypatch)
         monkeypatch.setattr(app_module.models, "get_user_by_username",
                             lambda u: SUPER_ADMIN)
         client.post("/auth/forgot-password", data={"fp_username": "superadmin"})
         sess = _get_session(client)
-        assert sess.get("pw_reset_otp_verified") is True
-        assert sess.get("pw_reset_is_super_admin") is True
+        assert sess.get("pw_reset_user_id") == SUPER_ADMIN["id"]
+        assert sess.get("pw_reset_mobile") == SUPER_ADMIN["phone"]
+        assert sess.get("pw_reset_otp_verified") is False
 
-    def test_super_admin_set_password_success(self, client, monkeypatch):
-        patch_otp(monkeypatch)
-        _set_session(client, pw_reset_user_id=1, pw_reset_otp_verified=True,
-                     pw_reset_username="superadmin", pw_reset_is_super_admin=True)
-        r = client.post("/auth/forgot-password/set", data={
-            "new_password": VALID_PASSWORD,
-            "confirm_password": VALID_PASSWORD,
-        }, follow_redirects=False)
-        assert r.status_code == 302
-        assert "/login" in r.headers["Location"]
-        assert any(c[0] == "update_password_only" for c in client.stub.calls)
-
-    def test_super_admin_otp_not_sent(self, client, monkeypatch):
+    def test_super_admin_otp_is_sent(self, client, monkeypatch):
         send_calls = []
         monkeypatch.setattr(app_module, "_send_login_otp",
                             lambda m: send_calls.append(m) or (True, "sent"))
@@ -608,7 +619,27 @@ class TestSuperAdminForgotPassword:
         monkeypatch.setattr(app_module.models, "get_user_by_username",
                             lambda u: SUPER_ADMIN)
         client.post("/auth/forgot-password", data={"fp_username": "superadmin"})
-        assert len(send_calls) == 0  # no OTP dispatched
+        assert send_calls == [SUPER_ADMIN["phone"]]
+
+    def test_super_admin_without_phone_is_blocked(self, client, monkeypatch):
+        patch_otp(monkeypatch)
+        monkeypatch.setattr(app_module.models, "get_user_by_username",
+                            lambda u: {**SUPER_ADMIN, "phone": None})
+        r = client.post("/auth/forgot-password", data={"fp_username": "superadmin"},
+                        follow_redirects=True)
+        assert r.status_code == 200
+
+    def test_super_admin_can_complete_reset_after_otp_verification(self, client, monkeypatch):
+        patch_otp(monkeypatch)
+        _set_session(client, pw_reset_user_id=1, pw_reset_otp_verified=True,
+                     pw_reset_username="superadmin", pw_reset_mobile="9000000001")
+        r = client.post("/auth/forgot-password/set", data={
+            "new_password": VALID_PASSWORD,
+            "confirm_password": VALID_PASSWORD,
+        }, follow_redirects=False)
+        assert r.status_code == 302
+        assert "/login" in r.headers["Location"]
+        assert any(c[0] == "update_password_only" for c in client.stub.calls)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -19,6 +19,7 @@ Primary implementation details are recorded in:
 - [PLAN.md](c:/Users/AP%20TRANSCO/OneDrive%20-%20APTRANSCO/Pictures/Petition%20Tracker%20with%20chatbot/PLAN.md)
 - [RESOLUTION.md](c:/Users/AP%20TRANSCO/OneDrive%20-%20APTRANSCO/Pictures/Petition%20Tracker%20with%20chatbot/RESOLUTION.md)
 - [AUDIT_EVIDENCE_INDEX.md](c:/Users/AP%20TRANSCO/OneDrive%20-%20APTRANSCO/Pictures/Petition%20Tracker%20with%20chatbot/AUDIT_EVIDENCE_INDEX.md)
+- [AUDIT_RUNTIME_CHECKLIST.md](c:/Users/AP%20TRANSCO/OneDrive%20-%20APTRANSCO/Pictures/Petition%20Tracker%20with%20chatbot/AUDIT_RUNTIME_CHECKLIST.md)
 
 ## Implemented Security Controls
 
@@ -91,7 +92,7 @@ These items are outside local code review and still need deployment-side proof b
 - deploy the latest application code and templates
 - restart/reload the application service
 - confirm schema update creation in the real database
-- verify production env values and secrets
+- verify production env values and secrets against [AUDIT_RUNTIME_CHECKLIST.md](c:/Users/AP%20TRANSCO/OneDrive%20-%20APTRANSCO/Pictures/Petition%20Tracker%20with%20chatbot/AUDIT_RUNTIME_CHECKLIST.md)
 - confirm production headers/cookies behind the real proxy path
 - capture live retest evidence for the seven report findings
 - attach CI/logging/ops evidence where required by governance or compliance
@@ -104,4 +105,4 @@ Local verification has been completed with:
 - focused security regression tests
 - broader route/auth/password/quality regression runs
 
-This makes the codebase audit-ready from an application-remediation perspective. Final external closure still depends on deployment evidence and live retest.
+This makes the codebase audit-ready from an application-remediation perspective. Final external closure still depends on runtime configuration, operational evidence, and live retest.

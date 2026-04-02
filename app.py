@@ -828,6 +828,11 @@ def _clear_legacy_login_captcha_session():
     session.pop('login_captcha_used_tokens', None)
 
 
+def _mark_login_captcha_session_dirty():
+    if has_request_context():
+        session.modified = True
+
+
 def _normalize_login_captcha_answer(raw_answer):
     value = re.sub(r'[^A-Za-z0-9]', '', (raw_answer or '').strip().upper())
     return value[:32]
@@ -839,6 +844,53 @@ def _login_captcha_answer_digest(token, answer):
     secret_key = (app.config.get('SECRET_KEY') or '').encode('utf-8')
     payload = f'{normalized_token}:{normalized_answer}'.encode('utf-8')
     return hmac.new(secret_key, payload, hashlib.sha256).hexdigest()
+
+
+def _login_captcha_proof_signature(payload_b64):
+    secret_key = (app.config.get('SECRET_KEY') or '').encode('utf-8')
+    return hmac.new(secret_key, (payload_b64 or '').encode('ascii'), hashlib.sha256).hexdigest()
+
+
+def _build_login_captcha_proof(token, answer, issued_at):
+    payload = {
+        'token': (token or '').strip(),
+        'issued_at': int(issued_at or 0),
+        'answer_digest': _login_captcha_answer_digest(token, answer),
+    }
+    payload_json = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+    payload_b64 = base64.urlsafe_b64encode(payload_json).decode('ascii').rstrip('=')
+    return f'{payload_b64}.{_login_captcha_proof_signature(payload_b64)}'
+
+
+def _parse_login_captcha_proof(captcha_proof):
+    proof = (captcha_proof or '').strip()
+    if not proof or '.' not in proof:
+        return None
+    payload_b64, provided_sig = proof.rsplit('.', 1)
+    expected_sig = _login_captcha_proof_signature(payload_b64)
+    if not hmac.compare_digest(provided_sig, expected_sig):
+        return None
+    padded = payload_b64 + ('=' * (-len(payload_b64) % 4))
+    try:
+        payload_bytes = base64.urlsafe_b64decode(padded.encode('ascii'))
+        payload = json.loads(payload_bytes.decode('utf-8'))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    token = (payload.get('token') or '').strip()
+    answer_digest = (payload.get('answer_digest') or '').strip()
+    try:
+        issued_at = int(payload.get('issued_at') or 0)
+    except (TypeError, ValueError):
+        return None
+    if not token or not answer_digest or issued_at <= 0:
+        return None
+    return {
+        'token': token,
+        'issued_at': issued_at,
+        'answer_digest': answer_digest,
+    }
 
 
 def _get_login_captcha_challenges_store():
@@ -875,12 +927,15 @@ def _cleanup_used_login_captcha_tokens(now_ts=None):
     ]
     for token in stale_challenges:
         challenges.pop(token, None)
+    if stale_tokens or stale_challenges:
+        _mark_login_captcha_session_dirty()
 
 
 def _mark_login_captcha_token_used(captcha_token, now_ts=None):
     _cleanup_used_login_captcha_tokens(now_ts)
     used_tokens = _get_login_captcha_used_tokens_store()
     used_tokens[(captcha_token or '').strip()] = int(time.time() if now_ts is None else now_ts)
+    _mark_login_captcha_session_dirty()
 
 
 def _captcha_set_pixel(buffer, width, height, x, y, color):
@@ -1027,6 +1082,12 @@ def _login_captcha_image_data_url(token):
     return f'data:image/bmp;base64,{image_b64}'
 
 
+def _login_captcha_proof(token):
+    challenges = _get_login_captcha_challenges_store()
+    challenge = challenges.get((token or '').strip()) or {}
+    return (challenge.get('proof') or '').strip()
+
+
 def generate_login_captcha(challenge_text=None, issued_at=None):
     challenge = _normalize_login_captcha_answer(challenge_text)
     if not challenge:
@@ -1039,7 +1100,9 @@ def generate_login_captcha(challenge_text=None, issued_at=None):
         'answer_digest': _login_captcha_answer_digest(token, challenge),
         'issued_at': issued_at,
         'image_b64': base64.b64encode(image_bytes).decode('ascii'),
+        'proof': _build_login_captcha_proof(token, challenge, issued_at),
     }
+    _mark_login_captcha_session_dirty()
     _cleanup_used_login_captcha_tokens(issued_at)
     return _login_captcha_image_url(token), token
 
@@ -1048,6 +1111,7 @@ def reset_login_captcha():
     _clear_legacy_login_captcha_session()
     challenges = _get_login_captcha_challenges_store()
     challenges.clear()
+    _mark_login_captcha_session_dirty()
     return generate_login_captcha()
 
 
@@ -1055,7 +1119,7 @@ def get_login_captcha():
     return reset_login_captcha()
 
 
-def validate_login_captcha(raw_answer, captcha_token):
+def validate_login_captcha(raw_answer, captcha_token, captcha_proof=None):
     answer = _normalize_login_captcha_answer(raw_answer)
     token = (captcha_token or '').strip()
     if not answer or not token:
@@ -1066,24 +1130,34 @@ def validate_login_captcha(raw_answer, captcha_token):
     challenges = _get_login_captcha_challenges_store()
     if token in used_tokens:
         return False
+    proof_payload = _parse_login_captcha_proof(captcha_proof)
     challenge = challenges.get(token)
-    if not challenge:
-        return False
-    issued_at = int(challenge.get('issued_at') or 0)
+    if proof_payload:
+        if proof_payload.get('token') != token:
+            return False
+        issued_at = int(proof_payload.get('issued_at') or 0)
+        expected_digest = (proof_payload.get('answer_digest') or '').strip()
+    else:
+        if not challenge:
+            return False
+        issued_at = int(challenge.get('issued_at') or 0)
+        expected_digest = (challenge.get('answer_digest') or '').strip()
     if issued_at > now_ts + 5:
         return False
     if now_ts - issued_at > LOGIN_CAPTCHA_TTL_SECONDS:
         challenges.pop(token, None)
+        _mark_login_captcha_session_dirty()
         return False
-    expected_digest = (challenge.get('answer_digest') or '').strip()
     if not expected_digest:
         challenges.pop(token, None)
+        _mark_login_captcha_session_dirty()
         return False
     provided_digest = _login_captcha_answer_digest(token, answer)
     is_valid = hmac.compare_digest(provided_digest, expected_digest)
     if is_valid:
         _mark_login_captcha_token_used(token, now_ts)
         challenges.pop(token, None)
+        _mark_login_captcha_session_dirty()
     return is_valid
 
 
@@ -2865,6 +2939,7 @@ def login():
         if not validate_login_captcha(
             request.form.get('captcha_answer'),
             request.form.get('captcha_token'),
+            request.form.get('captcha_proof'),
         ):
             _register_login_failure()
             flash('Captcha answer is incorrect.', 'warning')
@@ -2875,6 +2950,7 @@ def login():
                 captcha_image=captcha_image,
                 captcha_image_data=_login_captcha_image_data_url(captcha_token),
                 captcha_token=captcha_token,
+                captcha_proof=_login_captcha_proof(captcha_token),
                 otp_required=otp_required,
                 otp_mobile_masked=otp_mobile_masked,
             )
@@ -2899,7 +2975,7 @@ def login():
                                    target_user_id=user['id'])
                 return redirect(url_for('first_login_setup'))
 
-            if _is_otp_login_enabled() and user['role'] != 'super_admin':
+            if _is_otp_login_enabled():
                 mobile = _normalize_mobile_for_otp(user.get('phone'))
                 if not mobile:
                     # No phone on record → route through first-login setup so the
@@ -2925,6 +3001,7 @@ def login():
                         captcha_image=captcha_image,
                         captcha_image_data=_login_captcha_image_data_url(captcha_token),
                         captcha_token=captcha_token,
+                        captcha_proof=_login_captcha_proof(captcha_token),
                         otp_required=False,
                         otp_mobile_masked='',
                     )
@@ -2964,6 +3041,7 @@ def login():
         captcha_image=captcha_image,
         captcha_image_data=_login_captcha_image_data_url(captcha_token),
         captcha_token=captcha_token,
+        captcha_proof=_login_captcha_proof(captcha_token),
         otp_required=otp_required,
         otp_mobile_masked=otp_mobile_masked,
     )
@@ -2984,6 +3062,7 @@ def login_captcha_image(captcha_token):
     now_ts = int(time.time())
     if issued_at > now_ts + 5 or now_ts - issued_at > LOGIN_CAPTCHA_TTL_SECONDS:
         challenges.pop(token, None)
+        _mark_login_captcha_session_dirty()
         raise NotFound()
     image_b64 = (challenge.get('image_b64') or '').strip()
     if not image_b64:
@@ -3038,7 +3117,6 @@ _DEFAULT_PASSWORD = 'Nigaa@123'
 _PW_RESET_SESSION_KEYS = (
     'pw_reset_user_id', 'pw_reset_username',
     'pw_reset_mobile', 'pw_reset_otp_verified',
-    'pw_reset_is_super_admin',
 )
 
 
@@ -3052,8 +3130,8 @@ def _clear_pw_reset_session():
 @app.route('/auth/first-login-setup', methods=['GET', 'POST'])
 def first_login_setup():
     """Forced password change on first login.
-    Super-admin: only password required (no OTP, no phone needed).
-    All others: password + phone required (phone used for OTP on every login).
+    All roles, including super admin, must set password + phone.
+    The phone is used for OTP-based recovery and login where enabled.
     """
     user_id = session.get('force_change_user_id')
     if not user_id:
@@ -3079,17 +3157,12 @@ def first_login_setup():
             flash('Passwords do not match.', 'danger')
             return redirect(url_for('first_login_setup'))
 
-        if not is_super_admin:
-            # Phone is required for OTP-based login
-            if not re.fullmatch(r'[6-9]\d{9}', phone):
-                flash('Please enter a valid 10-digit Indian mobile number (starts with 6–9).', 'danger')
-                return redirect(url_for('first_login_setup'))
+        if not re.fullmatch(r'[6-9]\d{9}', phone):
+            flash('Please enter a valid 10-digit Indian mobile number (starts with 6–9).', 'danger')
+            return redirect(url_for('first_login_setup'))
 
         try:
-            if is_super_admin:
-                models.update_password_only(user_id, new_password)
-            else:
-                models.update_password_and_phone(user_id, new_password, phone)
+            models.update_password_and_phone(user_id, new_password, phone)
         except Exception:
             flash_internal_error('Unable to update credentials. Please try again.')
             return redirect(url_for('first_login_setup'))
@@ -3109,7 +3182,7 @@ def first_login_setup():
 
 @app.route('/auth/forgot-password', methods=['POST'])
 def forgot_password_request():
-    """Step 1 – look up user, send OTP (super_admin bypasses OTP)."""
+    """Step 1 – look up user and send OTP to the registered mobile."""
     username = (request.form.get('fp_username') or '').strip()
     if not username:
         flash('Please enter your username.', 'warning')
@@ -3126,14 +3199,6 @@ def forgot_password_request():
     _clear_pw_reset_session()
     session['pw_reset_user_id'] = user['id']
     session['pw_reset_username'] = user['username']
-
-    # Super-admin: bypass OTP, jump directly to set-password
-    if user['role'] == 'super_admin':
-        session['pw_reset_otp_verified'] = True
-        session['pw_reset_is_super_admin'] = True
-        log_security_event('auth.forgot_password_superadmin_bypass', severity='info',
-                           detail=f'user={username}')
-        return redirect(url_for('forgot_password_set'))
 
     mobile = _normalize_mobile_for_otp(user.get('phone') or '')
     if not mobile:
@@ -3729,7 +3794,7 @@ def _build_analysis_report_data(petitions):
     officer_map = {}
     direct_count = permission_count = overdue_count = 0
     prelim_count = detailed_count = 0
-    accident_total = accident_fatal = accident_nonfatal = 0
+    accident_total = 0
     monthly_counter = Counter()
 
     now = datetime.now()
@@ -4467,7 +4532,7 @@ def petition_new():
                 )
                 flash(f'Petition {result["sno"]} created and auto-forwarded to CVO/DSP successfully!', 'success')
             return redirect(url_for('petition_view', petition_id=result['id']))
-        except Exception as e:
+        except Exception:
             app.logger.exception('Error creating petition')
             flash('Unable to create petition. Please contact administrator.', 'danger')
 
@@ -4538,7 +4603,7 @@ def petitions_import_upload():
             required_headers={'subject'},
             allowed_headers=set(IMPORT_PETITION_HEADERS),
         )
-    except Exception as e:
+    except Exception:
         app.logger.exception('Unable to parse petition import upload file')
         flash('Unable to parse upload file. Please verify format and retry.', 'danger')
         return redirect(_import_back)
@@ -7110,7 +7175,7 @@ def chatbot_api():
     if any(w in msg_lower for w in ('who are you', 'what are you', 'who r u',
                                      'introduce yourself', 'tell me about yourself', 'your name')):
         return jsonify({'type': 'text', 'text': (
-            f"I'm **Nigaa** 🤖 — your smart petition assistant!\n\n"
+            "I'm **Nigaa** 🤖 — your smart petition assistant!\n\n"
             "I help officers manage and track petitions right from this chat window. "
             "You can search petitions, check pending work, view stats, and get role-specific workflow guidance — "
             "all without leaving this page.\n\n"
@@ -7125,9 +7190,9 @@ def chatbot_api():
     if any(w in msg_lower for w in frustration_words):
         empathy_replies = [
             f"I'm sorry you're having trouble, {user_name}. 😔 Let me help — type _\"help\"_ to see all available commands.",
-            f"That sounds frustrating. I'm here to help! 🤝 Type _\"help\"_ to see what I can do for you.",
+            "That sounds frustrating. I'm here to help! 🤝 Type _\"help\"_ to see what I can do for you.",
             f"Don't worry, {user_name}! 😊 Let's sort this out. What exactly do you need?",
-            f"I hear you! Let me try to make this easier. 🙏 What were you looking for?",
+            "I hear you! Let me try to make this easier. 🙏 What were you looking for?",
         ]
         return jsonify({'type': 'text', 'text': _random.choice(empathy_replies)})
 
@@ -7671,7 +7736,7 @@ def chatbot_api():
             "• **\"help\"** — full command list"
         ),
         (
-            f"I didn't quite catch that! 😅 Here are some things to try:\n\n"
+            "I didn't quite catch that! 😅 Here are some things to try:\n\n"
             "• _\"pending\"_ to see what needs your attention\n"
             "• _\"search Ravi Kumar\"_ to find a petition\n"
             "• _\"stats\"_ for a quick overview\n"

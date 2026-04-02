@@ -246,7 +246,7 @@
         <line x1="12" y1="8" x2="12.01" y2="8"/>
       </svg>
       {% if is_super_admin %}
-      Super Admin accounts do not require OTP. Just set a strong personal password to continue.
+      Super Admin accounts must also register a recovery mobile number so password reset stays secure.
       {% else %}
       Your mobile number will be used for OTP-based login and password recovery. Please ensure
       it is accurate and active.
@@ -302,8 +302,6 @@
         <div class="form-hint" id="matchHint"></div>
       </div>
 
-      <!-- Mobile Number (not required for Super Admin — no OTP) -->
-      {% if not is_super_admin %}
       <div class="form-group">
         <label for="phone">Mobile Number</label>
         <div class="input-wrap">
@@ -312,9 +310,14 @@
                  maxlength="10" pattern="[6-9][0-9]{9}"
                  placeholder="10-digit mobile number"/>
         </div>
-        <div class="form-hint">Used for OTP verification on future logins and password recovery.</div>
+        <div class="form-hint">
+          {% if is_super_admin %}
+          Used for secure password recovery and account verification.
+          {% else %}
+          Used for OTP verification on future logins and password recovery.
+          {% endif %}
+        </div>
       </div>
-      {% endif %}
 
       <button type="submit" class="btn-submit" id="submitBtn">
         Set Password &amp; Continue
