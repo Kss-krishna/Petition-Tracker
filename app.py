@@ -2417,7 +2417,6 @@ def _begin_login_otp_challenge(user):
 
     _clear_authenticated_session()
     _clear_pending_login_otp_state()
-    _rotate_session_identifier()
 
     sent_ok, transaction_id, provider_message = _send_login_otp_code(user)
     if not sent_ok:
