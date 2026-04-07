@@ -199,6 +199,22 @@ class InternalAPI:
             return APIResult(False, reason="server_busy", message=result.message or "Unable to send OTP.", payload=result.payload)
         return APIResult(True, message=result.message or "OTP sent.", payload=result.payload)
 
+    def check_user_for_recovery(self, username: str, mobile: str) -> APIResult:
+        """Call /checkCred with user_id + mobileno to confirm the account exists
+        in the APTRANSCO system before issuing an OTP for password recovery."""
+        result = self._post("/checkCred", {"user_id": username, "mobileno": mobile})
+        if not result.ok:
+            return result
+        payload = result.payload
+        if isinstance(payload, dict):
+            for key in ("success", "status", "valid", "found", "authenticated"):
+                if key in payload and _looks_truthy(payload.get(key)):
+                    return APIResult(True, message=result.message or "User verified.", payload=payload)
+        message = (result.message or "").lower()
+        if any(token in message for token in ("not found", "invalid", "failed", "unknown", "denied")):
+            return APIResult(False, reason="invalid_credentials", message=result.message or "Account not found.", payload=payload)
+        return APIResult(True, message=result.message or "User verified.", payload=payload)
+
     def verify_otp(self, mobile: str, otp_code: str) -> APIResult:
         payload = {
             "mobileno": mobile,
@@ -532,6 +548,7 @@ def handle_first_login_setup(context: dict[str, Any]):
 def handle_forgot_password_request(context: dict[str, Any]):
     get_user_by_username = context["get_user_by_username"]
     send_login_otp = context["send_login_otp"]
+    check_user_identity = context.get("check_user_identity")
 
     clear_reset_password_state()
     username = (request.form.get("fp_username") or request.form.get("recovery_username") or "").strip()
@@ -549,6 +566,18 @@ def handle_forgot_password_request(context: dict[str, Any]):
     if not mobile:
         flash("No valid recovery mobile number is registered for this account.", "warning")
         return redirect(url_for("login", tab="recovery"))
+
+    # Verify the account exists in the APTRANSCO system before issuing an OTP.
+    if check_user_identity:
+        identity_result = check_user_identity(username, mobile)
+        if not identity_result.ok:
+            _set_auth_invalid_reason(
+                identity_result.reason or "invalid_credentials",
+                username=username, user_id=user.get("id"),
+                flow="password_reset_cred_check", detail=identity_result.message,
+            )
+            flash("Unable to verify your account. Please contact the administrator.", "warning")
+            return redirect(url_for("login", tab="recovery"))
 
     send_result = send_login_otp(mobile)
     if not send_result.ok:
@@ -615,6 +644,9 @@ def handle_forgot_password_set(context: dict[str, Any]):
     validate_password_strength = context["validate_password_strength"]
     flash_internal_error = context["flash_internal_error"]
     update_password_only = context["update_password_only"]
+    invalidate_user_sessions = context.get("invalidate_user_sessions")
+    activate_login_session = context.get("activate_login_session")
+    get_user_by_id = context.get("get_user_by_id")
 
     state = get_reset_password_state()
     if not state or not state.get("otp_verified"):
@@ -644,9 +676,26 @@ def handle_forgot_password_set(context: dict[str, Any]):
             flash_internal_error("Unable to update password. Please try again.")
             return render_template("password_reset_set.html", username=state.get("username", ""))
 
+        # Invalidate all existing sessions for this user so hijacked sessions
+        # cannot persist after the password change.
+        if invalidate_user_sessions:
+            invalidate_user_sessions(state["user_id"])
+
+        user_id_for_log = state.get("user_id")
         clear_reset_password_state()
-        g._log_security_event("auth.password_reset_completed", severity="info", target_user_id=state.get("user_id"))
+        g._log_security_event("auth.password_reset_completed", severity="info", target_user_id=user_id_for_log)
+
+        # Auto-login: rotate session and authenticate the user immediately.
+        if activate_login_session and get_user_by_id:
+            updated_user = get_user_by_id(user_id_for_log)
+            if updated_user and updated_user.get("is_active") is not False:
+                activate_login_session(updated_user)
+                g._log_security_event("auth.login_success", severity="info", auth_factor="password_reset_auto_login")
+                flash(f"Password updated. Welcome back, {updated_user['full_name']}!", "success")
+                # 303 See Other — prevents Safari from re-posting on Refresh.
+                return redirect(url_for("dashboard"), 303)
+
         flash("Password updated successfully. Please login with your new password.", "success")
-        return redirect(url_for("login"))
+        return redirect(url_for("login"), 303)
 
     return render_template("password_reset_set.html", username=state.get("username", ""))
