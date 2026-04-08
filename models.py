@@ -3181,9 +3181,11 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
     counts = _count_statuses(petitions)
     is_cvo_like = user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp')
     electrical_total = sum(1 for p in petitions if (p.get('petition_type') or '').strip() == 'electrical_accident')
+    total_card = {'label': 'Total Petitions', 'value': len(petitions), 'metric': 'all', 'style': 'stat-primary'}
 
     if user_role in ('super_admin',):
         cards = [
+            total_card,
             {'label': 'Received', 'value': counts.get('received', 0), 'metric': 'status:received', 'style': 'stat-primary'},
             {'label': 'Forwarded to CVO/DSP', 'value': counts.get('forwarded_to_cvo', 0), 'metric': 'status:forwarded_to_cvo', 'style': 'stat-info'},
             {'label': 'Sent for Permission', 'value': counts.get('sent_for_permission', 0), 'metric': 'status:sent_for_permission', 'style': 'stat-warning'},
@@ -3202,6 +3204,7 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
         return cards
     if user_role == 'po':
         return [
+            total_card,
             {'label': 'Permission Pending', 'value': counts.get('sent_for_permission', 0), 'metric': 'status:sent_for_permission', 'style': 'stat-warning'},
             {'label': 'Permission Given', 'value': _get_po_permission_given_count(user_id), 'metric': 'po_permission_given', 'style': 'stat-success'},
             {'label': 'Reports Received', 'value': _count_multi(counts, ['forwarded_to_po', 'forwarded_to_jmd']), 'metric': 'multi:forwarded_to_po,forwarded_to_jmd', 'style': 'stat-info'},
@@ -3212,6 +3215,7 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
         ]
     if is_cvo_like:
         return [
+            total_card,
             {'label': 'Received', 'value': counts.get('forwarded_to_cvo', 0), 'metric': 'status:forwarded_to_cvo', 'style': 'stat-primary'},
             {'label': 'Permission Approved', 'value': counts.get('permission_approved', 0), 'metric': 'status:permission_approved', 'style': 'stat-success'},
             {'label': 'Assigned to Field Officers', 'value': counts.get('assigned_to_inspector', 0), 'metric': 'status:assigned_to_inspector', 'style': 'stat-warning'},
@@ -3222,11 +3226,13 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
         ]
     if user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
         return [
+            total_card,
             {'label': 'Pending for Action', 'value': counts.get('action_instructed', 0), 'metric': 'status:action_instructed', 'style': 'stat-warning'},
             {'label': 'Action Report Submitted', 'value': counts.get('action_taken', 0), 'metric': 'status:action_taken', 'style': 'stat-success'},
         ]
     if user_role == 'jmd':
         return [
+            total_card,
             {'label': 'Received for Review', 'value': counts.get('forwarded_to_jmd', 0), 'metric': 'status:forwarded_to_jmd', 'style': 'stat-primary'},
             {'label': 'Pending at PO', 'value': counts.get('forwarded_to_po', 0), 'metric': 'status:forwarded_to_po', 'style': 'stat-info'},
             {'label': 'Conclusions Given', 'value': counts.get('conclusion_given', 0), 'metric': 'status:conclusion_given', 'style': 'stat-success'},
@@ -3237,6 +3243,7 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
         ]
     if user_role == 'inspector':
         return [
+            total_card,
             {'label': 'Assigned', 'value': counts.get('assigned_to_inspector', 0), 'metric': 'status:assigned_to_inspector', 'style': 'stat-primary'},
             {'label': 'Sent Back for Re-enquiry', 'value': counts.get('sent_back_for_reenquiry', 0), 'metric': 'status:sent_back_for_reenquiry', 'style': 'stat-warning'},
             {'label': 'Enquiry In Process', 'value': counts.get('enquiry_in_progress', 0), 'metric': 'status:enquiry_in_progress', 'style': 'stat-warning'},
@@ -3244,13 +3251,11 @@ def _build_role_kpi_cards(user_role, petitions, user_id=None):
         ]
     if user_role == 'data_entry':
         return [
-            {'label': 'Petitions Entered', 'value': len(petitions), 'metric': 'all', 'style': 'stat-primary'},
+            total_card,
             {'label': 'Pending at CVO/DSP', 'value': counts.get('forwarded_to_cvo', 0), 'metric': 'status:forwarded_to_cvo', 'style': 'stat-info'},
             {'label': 'Closed', 'value': counts.get('closed', 0), 'metric': 'status:closed', 'style': 'stat-violet'},
         ]
-    return [
-        {'label': 'Total', 'value': len(petitions), 'metric': 'all', 'style': 'stat-primary'},
-    ]
+    return [total_card]
 
 
 def _get_workflow_stage_stats(petitions):

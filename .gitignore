@@ -10,6 +10,7 @@ uploads/
 *.sql
 .vscode/
 *.log
+logs/
 server.out.log
 server.err.log
 pytest_out.txt

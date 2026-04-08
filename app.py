@@ -18,6 +18,8 @@ from auth_routes import (
 )
 from datetime import datetime, date, timedelta, timezone
 from collections import Counter, deque
+import logging
+import logging.handlers
 import os
 import io
 import csv
@@ -106,6 +108,41 @@ if config.TRUST_PROXY_HEADERS:
         app.config['SESSION_COOKIE_SECURE'] = True
 
 _internal_auth_api = InternalAPI.from_config(config)
+
+
+# ---------------------------------------------------------------------------
+# Structured file logging
+# All security events, auth attempts, API errors, and unusual traffic are
+# emitted via app.logger (JSON lines).  In production, write to a rotating
+# file so logs survive process restarts and can be tailed / shipped to a SIEM.
+# ---------------------------------------------------------------------------
+def _configure_app_logging():
+    log_level = getattr(logging, config.LOG_LEVEL, logging.INFO)
+    formatter = logging.Formatter('%(message)s')  # payloads are already JSON
+    app.logger.setLevel(log_level)
+
+    if config.LOG_FILE:
+        log_path = os.path.join(os.path.dirname(__file__), config.LOG_FILE)
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_path,
+            maxBytes=config.LOG_MAX_BYTES,
+            backupCount=config.LOG_BACKUP_COUNT,
+            encoding='utf-8',
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        app.logger.addHandler(file_handler)
+
+    # Always keep a stderr handler so logs appear in Docker / systemd journal.
+    if not app.logger.handlers:
+        stderr_handler = logging.StreamHandler()
+        stderr_handler.setLevel(log_level)
+        stderr_handler.setFormatter(formatter)
+        app.logger.addHandler(stderr_handler)
+
+
+_configure_app_logging()
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +575,11 @@ HELP_RESOURCE_TYPES = {'manual', 'flowchart', 'video', 'office_order', 'news'}
 HELP_RESOURCE_STORAGE_KINDS = {'upload', 'external_url'}
 LOGIN_ATTEMPTS = {}
 PETITION_SUBMISSION_ATTEMPTS = {}
+# Unusual traffic: track 4xx error counts per IP to surface scanning/probing.
+# Keys are client IPs; values are {count, window_start}.
+_ERROR_TRAFFIC: dict = {}
+_ERROR_TRAFFIC_WINDOW_SECONDS = 60   # rolling window
+_ERROR_TRAFFIC_ALERT_THRESHOLD = 20  # log a warning after this many 4xx in window
 VALID_RECEIVED_AT = {'jmd_office', 'cvo_apspdcl_tirupathi', 'cvo_apepdcl_vizag', 'cvo_apcpdcl_vijayawada'}
 VALID_TARGET_CVO = {'apspdcl', 'apepdcl', 'apcpdcl', 'headquarters'}
 VALID_ORGANIZATIONS = {'aptransco', 'apgenco'}
@@ -1774,33 +1816,64 @@ def _render_http_error(status_code, title, message):
     return render_template('http_error.html', status_code=int(status_code), title=title, message=message), int(status_code)
 
 
+def _track_error_traffic(status_code):
+    """Count 4xx errors per IP in a rolling window; log a warning when the
+    count crosses _ERROR_TRAFFIC_ALERT_THRESHOLD (possible scanner/probe)."""
+    try:
+        ip = _client_ip()
+        now = time.time()
+        entry = _ERROR_TRAFFIC.get(ip)
+        if entry is None or (now - entry['window_start']) > _ERROR_TRAFFIC_WINDOW_SECONDS:
+            _ERROR_TRAFFIC[ip] = {'count': 1, 'window_start': now}
+        else:
+            entry['count'] += 1
+            if entry['count'] == _ERROR_TRAFFIC_ALERT_THRESHOLD:
+                log_security_event(
+                    'traffic.unusual_error_rate',
+                    severity='warning',
+                    error_count=entry['count'],
+                    window_seconds=_ERROR_TRAFFIC_WINDOW_SECONDS,
+                    last_status_code=status_code,
+                )
+    except Exception:
+        pass  # never let tracking break a response
+
+
 @app.errorhandler(BadRequest)
 def handle_bad_request(_error):
+    _track_error_traffic(400)
     return _render_http_error(400, 'Bad request', 'The request could not be processed. Please verify input and try again.')
 
 
 @app.errorhandler(Unauthorized)
 def handle_unauthorized(_error):
+    log_security_event('http.401_unauthorized', severity='warning')
+    _track_error_traffic(401)
     return _render_http_error(401, 'Authentication required', 'Please login and try again.')
 
 
 @app.errorhandler(Forbidden)
 def handle_forbidden(_error):
+    log_security_event('http.403_forbidden', severity='warning')
+    _track_error_traffic(403)
     return _render_http_error(403, 'Access denied', 'You do not have permission to access this resource.')
 
 
 @app.errorhandler(NotFound)
 def handle_not_found(_error):
+    _track_error_traffic(404)
     return _render_http_error(404, 'Not found', 'The requested page or resource was not found.')
 
 
 @app.errorhandler(MethodNotAllowed)
 def handle_method_not_allowed(_error):
+    _track_error_traffic(405)
     return _render_http_error(405, 'Method not allowed', 'This endpoint does not support the requested method.')
 
 
 @app.errorhandler(TooManyRequests)
 def handle_too_many_requests(_error):
+    log_security_event('http.429_too_many_requests', severity='warning')
     return _render_http_error(429, 'Too many requests', 'Request rate is too high. Please retry shortly.')
 
 
@@ -1826,6 +1899,7 @@ def handle_internal_server_error(error):
         app.logger.exception('Unhandled internal server error: %s', original_error)
     else:
         app.logger.exception('Unhandled internal server error')
+    log_security_event('http.500_internal_server_error', severity='error')
     return _render_transient_error(
         status_code=500,
         title='Temporary server issue',
@@ -2361,22 +2435,24 @@ def _build_storage_filename(prefix, original_name, petition_id=None):
 
 
 def _resolve_petition_id_for_file(filename):
-    petition_id = _petition_id_from_filename(filename)
-    if petition_id:
-        return petition_id
-    if not hasattr(models, 'find_petition_id_by_filename'):
-        return None
-    try:
-        resolved = models.find_petition_id_by_filename(filename)
-        if resolved:
-            return resolved
-        base_name = (filename or '').replace('\\', '/').split('/')[-1]
-        if base_name and base_name != filename:
-            return models.find_petition_id_by_filename(base_name)
-        return None
-    except Exception:
-        app.logger.exception('Unable to resolve petition id for file: %s', filename)
-        return None
+    # DB lookup is authoritative: the file must be explicitly linked to a
+    # petition row.  Regex extraction is only a last-resort fallback for files
+    # that pre-date the DB-tracked schema, because the regex can erroneously
+    # match digit sequences in the original filename (e.g. "report_2024.pdf").
+    if hasattr(models, 'find_petition_id_by_filename'):
+        try:
+            resolved = models.find_petition_id_by_filename(filename)
+            if resolved:
+                return resolved
+            base_name = (filename or '').replace('\\', '/').split('/')[-1]
+            if base_name and base_name != filename:
+                resolved = models.find_petition_id_by_filename(base_name)
+                if resolved:
+                    return resolved
+        except Exception:
+            app.logger.exception('Unable to resolve petition id for file: %s', filename)
+    # Fallback: extract petition_id from filename pattern (legacy filenames only).
+    return _petition_id_from_filename(filename)
 
 
 def _parse_requested_petition_id(raw_value):
@@ -2429,6 +2505,19 @@ def _has_conversion_request_history(tracking_rows):
 
 @app.before_request
 def _security_before_request():
+    # Enforce HTTPS: redirect plain-HTTP requests to the HTTPS equivalent.
+    # This runs only when FORCE_HTTPS=1 and the request arrived unencrypted.
+    # Requests from automated health checks (HEAD /) are exempt to avoid loops.
+    if config.FORCE_HTTPS and not request.is_secure:
+        if not app.config.get('TESTING') and request.method != 'HEAD':
+            url = request.url.replace('http://', 'https://', 1)
+            log_security_event(
+                'web.http_to_https_redirect',
+                severity='info',
+                target_url=url,
+            )
+            return redirect(url, code=301)
+
     _queue_proxy_mismatch_diagnostics()
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
         if app.config.get('TESTING'):
@@ -2436,7 +2525,14 @@ def _security_before_request():
         if 'user_id' in session:
             sent_token = (request.form.get('_csrf_token') or request.headers.get('X-CSRF-Token') or '').strip()
             expected_token = session.get('_csrf_token') or ''
-            if not expected_token or not sent_token or not hmac.compare_digest(sent_token, expected_token):
+            if not expected_token:
+                # No CSRF token in session yet — happens when a duplicate POST
+                # arrives after session rotation at login (the new session is
+                # authenticated but the token hasn't been issued yet).
+                # Redirect silently; do NOT flash an error to the user.
+                log_security_event('web.csrf_token_absent_post_rotation', severity='info')
+                return redirect(_safe_internal_redirect_target(request.referrer, fallback_endpoint='dashboard'))
+            if not sent_token or not hmac.compare_digest(sent_token, expected_token):
                 log_security_event('web.csrf_validation_failed', severity='warning')
                 if _request_prefers_json():
                     return jsonify({'error': 'Invalid or missing CSRF token.'}), 403
@@ -5960,11 +6056,13 @@ def profile_photo_file(filename):
     if not filename:
         return Response(status=404)
     owner_match = re.match(r'^user_(\d+)_', os.path.basename(filename))
-    if owner_match:
-        owner_id = int(owner_match.group(1))
-        if session.get('user_role') != 'super_admin' and owner_id != int(session.get('user_id') or 0):
-            log_security_event('access.profile_photo_forbidden', severity='warning', owner_id=owner_id)
-            return Response(status=403)
+    if not owner_match:
+        log_security_event('access.profile_photo_unowned', severity='warning', filename=filename)
+        return Response(status=403)
+    owner_id = int(owner_match.group(1))
+    if session.get('user_role') != 'super_admin' and owner_id != int(session.get('user_id') or 0):
+        log_security_event('access.profile_photo_forbidden', severity='warning', owner_id=owner_id)
+        return Response(status=403)
     return send_from_directory(PROFILE_UPLOAD_DIR, filename, as_attachment=False)
 
 

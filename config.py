@@ -80,11 +80,11 @@ class Config:
             resolved_storage_path = (app_root / storage_path).resolve()
         self.UPLOAD_BASE_DIR = str(resolved_storage_path)
         self.MAX_UPLOAD_SIZE_MB = int(os.environ.get('MAX_UPLOAD_SIZE_MB', '10'))
+        self.SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', self.IS_PRODUCTION)
         self.SESSION_COOKIE_NAME = (
             os.environ.get('SESSION_COOKIE_NAME')
             or ('__Host-nigaa_session' if self.IS_PRODUCTION and self.SESSION_COOKIE_SECURE else 'nigaa_session')
         ).strip() or 'nigaa_session'
-        self.SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', self.IS_PRODUCTION)
         self.SESSION_COOKIE_DOMAIN = (os.environ.get('SESSION_COOKIE_DOMAIN') or '').strip() or None
         self.SESSION_COOKIE_PATH = (os.environ.get('SESSION_COOKIE_PATH') or '/').strip() or '/'
         session_cookie_samesite = (os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax') or 'Lax').strip().capitalize()
@@ -124,6 +124,17 @@ class Config:
         self.PETITION_IP_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('PETITION_IP_RATE_LIMIT_WINDOW_SECONDS', '300'))
         self.PETITION_IP_RATE_LIMIT_MAX_SUBMISSIONS = int(os.environ.get('PETITION_IP_RATE_LIMIT_MAX_SUBMISSIONS', '60'))
         self.PETITION_IP_RATE_LIMIT_BLOCK_SECONDS = int(os.environ.get('PETITION_IP_RATE_LIMIT_BLOCK_SECONDS', '180'))
+
+        # HTTPS redirect — redirect plain-HTTP requests to HTTPS at the app level.
+        # Enable in production when not handled by a reverse proxy already.
+        self.FORCE_HTTPS = _env_bool('FORCE_HTTPS', self.IS_PRODUCTION)
+
+        # Logging — structured JSON logs written to a rotating file.
+        self.LOG_FILE = (os.environ.get('LOG_FILE') or '').strip() or None
+        self.LOG_LEVEL = (os.environ.get('LOG_LEVEL') or 'INFO').strip().upper()
+        self.LOG_MAX_BYTES = max(1024 * 1024, int(os.environ.get('LOG_MAX_BYTES', str(10 * 1024 * 1024))))
+        self.LOG_BACKUP_COUNT = max(1, int(os.environ.get('LOG_BACKUP_COUNT', '5')))
+
         if self.IS_PRODUCTION:
             self._validate_production_settings()
         self._validate_session_cookie_settings()
@@ -162,6 +173,19 @@ class Config:
             raise RuntimeError(
                 "Missing required production environment variables: "
                 + ", ".join(missing)
+            )
+
+        # Prevent unencrypted DB connections in production for remote hosts.
+        # Loopback addresses (localhost / 127.x / ::1) are exempt because local
+        # PostgreSQL instances typically don't have SSL configured.
+        _loopback = {'localhost', '127.0.0.1', '::1', ''}
+        db_host = (os.environ.get('DATABASE_URL') or self.DB_HOST or '').strip()
+        is_loopback = any(db_host == h or db_host.startswith('127.') for h in _loopback)
+        if not is_loopback and self.DB_SSLMODE not in ('require', 'verify-ca', 'verify-full'):
+            raise RuntimeError(
+                "Production requires DB_SSLMODE=require (or verify-ca/verify-full) "
+                f"for remote host '{db_host}'. Current value: '{self.DB_SSLMODE}'. "
+                "Set DB_SSLMODE=require in .env to enforce TLS to PostgreSQL."
             )
 
     @property
