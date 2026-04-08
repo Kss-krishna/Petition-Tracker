@@ -3331,10 +3331,17 @@ def first_login_setup():
 
 def _check_user_for_recovery(username: str, mobile: str):
     """Call APTRANSCO /checkCred to confirm the account exists before issuing a reset OTP.
-    Skips gracefully if the API is not configured (dev/test environments)."""
+    Skips gracefully if the API is not configured (dev/test environments) or if the
+    endpoint is unavailable on this server (e.g. quality server without /checkCred)."""
     if app.config.get('TESTING') or not _internal_auth_api.is_configured():
         return APIResult(True, message='User verified (API not configured).', payload={'source': 'local'})
-    return _internal_auth_api.check_user_for_recovery(username, mobile)
+    result = _internal_auth_api.check_user_for_recovery(username, mobile)
+    # If the endpoint is simply not deployed on this server, skip the check
+    # rather than blocking the user entirely.
+    if not result.ok and result.reason == 'server_busy':
+        app.logger.warning('checkCred unavailable (%s) – skipping pre-verification for %s', result.message, username)
+        return APIResult(True, message='User verified (checkCred unavailable).', payload={'source': 'local'})
+    return result
 
 
 def _invalidate_all_user_sessions(user_id: int) -> None:

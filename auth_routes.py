@@ -163,6 +163,10 @@ class InternalAPI:
 
         if response.status_code >= 500:
             return APIResult(False, reason="server_busy", message="Authentication server is busy.", payload=body)
+        if response.status_code == 404:
+            # Endpoint not deployed on this server (e.g. quality/staging environment).
+            # Treat as service unavailable so callers can fall through gracefully.
+            return APIResult(False, reason="server_busy", message="Authentication endpoint not available on this server.", payload=body)
         if response.status_code >= 400:
             return APIResult(False, reason="invalid_credentials", message=_message_from_payload(body) or "Authentication failed.", payload=body)
         return APIResult(True, message=_message_from_payload(body), payload=body)
