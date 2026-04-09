@@ -5010,6 +5010,18 @@ def petition_view(petition_id):
         cvo_users = models.get_cvo_users()
         cmd_cgm_users = models.get_cmd_cgm_users()
     
+    reenquiry_count = sum(
+        1 for t in (tracking or []) if t.get('status_after') == 'sent_back_for_reenquiry'
+    )
+
+    all_reports = models.get_all_enquiry_reports(petition_id)
+    all_reports_file_availability = {}
+    for ar in all_reports:
+        for fkey in ('report_file',):
+            fname = ar.get(fkey)
+            if fname and fname not in all_reports_file_availability:
+                all_reports_file_availability[fname] = _uploaded_file_exists(ENQUIRY_UPLOAD_DIR, fname)
+
     return render_template('petition_view.html', 
                          petition=petition, tracking=tracking, report=report,
                          inspectors=inspectors, cvo_users=cvo_users, cmd_cgm_users=cmd_cgm_users,
@@ -5022,7 +5034,10 @@ def petition_view(petition_id):
                          tracking_file_availability=tracking_file_availability,
                          ereceipt_file_available=ereceipt_file_available,
                          conclusion_file_available=conclusion_file_available,
-                         report_file_availability=report_file_availability)
+                         report_file_availability=report_file_availability,
+                         reenquiry_count=reenquiry_count,
+                         all_reports=all_reports,
+                         all_reports_file_availability=all_reports_file_availability)
 
 # ========================================
 # WORKFLOW ACTION ROUTES

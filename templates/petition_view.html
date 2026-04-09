@@ -582,6 +582,14 @@
                 {% if petition.status == 'forwarded_to_po' %}
                 <div class="action-panel">
                     <h4>PO Decision</h4>
+                    {% if reenquiry_count > 0 %}
+                    <div class="reenquiry-log-badge">
+                        <span class="reenquiry-log-icon">&#8635;</span>
+                        This petition has been sent back for re-enquiry
+                        <strong>{{ reenquiry_count }} time{% if reenquiry_count != 1 %}s{% endif %}</strong>.
+                        <a href="#tracking-history-section" class="reenquiry-log-link">View log &darr;</a>
+                    </div>
+                    {% endif %}
                     {% set cmd_actor_label = 'CGM/HR TRANSCO' if petition.target_cvo == 'headquarters' else 'CMD' %}
                     {% set has_cmd_cgm_users = (cmd_cgm_users|length > 0) %}
                     <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}">
@@ -596,6 +604,7 @@
                                 </option>
                                 {% endfor %}
                                 <option value="po_lodge">Lodge in PO (No {{ cmd_actor_label }} Action Required)</option>
+                                <option value="po_send_back_reenquiry">Send Back for Re-enquiry (via CVO)</option>
                             </select>
                         </div>
                         <div class="form-group" id="po_cmd_instructions_group">
@@ -615,6 +624,10 @@
                             <label>{{ f_po_lodge_remarks.label }} {% if f_po_lodge_remarks.required %}<span class="required">*</span>{% endif %}</label>
                             <textarea name="lodge_remarks" rows="3" {% if f_po_lodge_remarks.required %}required{% endif %} placeholder="Reason for lodging at PO"></textarea>
                         </div>
+                        <div class="form-group" id="po_reenquiry_reason_group" style="display:none;">
+                            <label>Reason for Re-enquiry <span class="required">*</span></label>
+                            <textarea name="comments" rows="3" placeholder="Why the enquiry report is insufficient and what needs to be re-investigated"></textarea>
+                        </div>
                         <button type="submit" id="po_unified_submit_btn" class="btn btn-warning">Forward to {{ cmd_actor_label }}</button>
                     </form>
                     <script>
@@ -627,21 +640,37 @@
                         const cmdHandlerInput = document.getElementById('po_cmd_handler_input');
                         const cmdGroup = document.getElementById('po_cmd_instructions_group');
                         const lodgeGroup = document.getElementById('po_lodge_remarks_group');
+                        const reenquiryGroup = document.getElementById('po_reenquiry_reason_group');
                         const btn = document.getElementById('po_unified_submit_btn');
                         const efileLabel = document.getElementById('po_efile_label');
                         const efileInput = document.getElementById('po_efile_input');
                         const efileHelp = document.getElementById('po_efile_help');
                         if (!sel || !action || !cmdHandlerInput || !cmdGroup || !lodgeGroup || !btn || !efileLabel || !efileInput || !efileHelp) return;
+                        const efileWrap = efileInput.closest('.form-group');
                         if (sel.value === 'po_lodge') {
                             action.value = 'po_lodge';
                             cmdHandlerInput.value = '';
                             cmdGroup.style.display = 'none';
                             lodgeGroup.style.display = '';
+                            reenquiryGroup.style.display = 'none';
+                            reenquiryGroup.querySelector('textarea').required = false;
+                            if (efileWrap) efileWrap.style.display = '';
                             btn.className = 'btn btn-success';
                             btn.textContent = 'Lodge Petition';
                             efileInput.required = efileInput.dataset.lodgeRequired === '1';
                             efileLabel.innerHTML = `${poLodgeEfileLabel} ${efileInput.required ? '<span class="required">*</span>' : '(Optional)'}`;
                             efileHelp.textContent = `${efileInput.required ? 'Required' : 'Optional'} when lodging at PO.`;
+                        } else if (sel.value === 'po_send_back_reenquiry') {
+                            action.value = 'po_send_back_reenquiry';
+                            cmdHandlerInput.value = '';
+                            cmdGroup.style.display = 'none';
+                            lodgeGroup.style.display = 'none';
+                            reenquiryGroup.style.display = '';
+                            reenquiryGroup.querySelector('textarea').required = true;
+                            if (efileWrap) efileWrap.style.display = 'none';
+                            efileInput.required = false;
+                            btn.className = 'btn btn-danger';
+                            btn.textContent = 'Send Back for Re-enquiry';
                         } else {
                             const selectedVal = sel.value || '';
                             const selectedUserId = selectedVal.includes(':') ? selectedVal.split(':')[1] : '';
@@ -650,6 +679,9 @@
                             cmdHandlerInput.value = selectedUserId;
                             cmdGroup.style.display = '';
                             lodgeGroup.style.display = 'none';
+                            reenquiryGroup.style.display = 'none';
+                            reenquiryGroup.querySelector('textarea').required = false;
+                            if (efileWrap) efileWrap.style.display = '';
                             btn.className = 'btn btn-warning';
                             btn.textContent = selectedText ? selectedText.replace('Send to ', 'Forward to ').replace(' for Action', '') : `Forward to ${cmdActorLabel}`;
                             efileInput.required = efileInput.dataset.sendRequired === '1';
@@ -774,6 +806,19 @@
                 {% if petition.status == 'permission_approved' or (petition.status == 'forwarded_to_cvo' and not petition.requires_permission) %}
                 <div class="action-panel">
                     <h4>Assign to Field Inspector</h4>
+                    {% set po_reenquiry_entry = namespace(comment='', found=false) %}
+                    {% for t in tracking|reverse %}
+                        {% if not po_reenquiry_entry.found and t.action == 'Returned to CVO/DSP for Re-enquiry' %}
+                            {% set po_reenquiry_entry.comment = t.comments %}
+                            {% set po_reenquiry_entry.found = true %}
+                        {% endif %}
+                    {% endfor %}
+                    {% if po_reenquiry_entry.found %}
+                    <div class="reenquiry-log-badge" style="margin-bottom:14px;">
+                        <span class="reenquiry-log-icon">&#8635;</span>
+                        <span><strong>PO sent back for re-enquiry.</strong>{% if po_reenquiry_entry.comment %} Reason: {{ po_reenquiry_entry.comment }}{% endif %}</span>
+                    </div>
+                    {% endif %}
                     <form method="POST" action="{{ url_for('petition_action', petition_id=petition.id) }}" enctype="multipart/form-data">
                         <input type="hidden" name="action" value="assign_inspector">
                         <div class="form-group">
@@ -820,6 +865,14 @@
                 {% if petition.status == 'enquiry_report_submitted' %}
                 <div class="action-panel">
                     <h4 data-i18n="petition.view.cvo_next_step">CVO Next Step</h4>
+                    {% if reenquiry_count > 0 %}
+                    <div class="reenquiry-log-badge">
+                        <span class="reenquiry-log-icon">&#8635;</span>
+                        This petition has been sent back for re-enquiry
+                        <strong>{{ reenquiry_count }} time{% if reenquiry_count != 1 %}s{% endif %}</strong>.
+                        <a href="#tracking-history-section" class="reenquiry-log-link">View log &darr;</a>
+                    </div>
+                    {% endif %}
                     <div class="form-group">
                         <label data-i18n="petition.view.select_action">Select Action</label>
                         <select id="cvo_next_step_selector" onchange="toggleCvoNextStepFields()">
@@ -928,12 +981,25 @@
                 {% if petition.status in ('assigned_to_inspector', 'sent_back_for_reenquiry') and (petition.assigned_inspector_id == current_user_id or current_user_role == 'super_admin') %}
                 <div class="action-panel">
                     <h4>Upload Enquiry Report</h4>
-                    {% if petition.status == 'sent_back_for_reenquiry' and report %}
+                    {% set show_prev_ref = (petition.status == 'sent_back_for_reenquiry') or (petition.status == 'assigned_to_inspector' and reenquiry_count > 0) %}
+                    {% if show_prev_ref and report %}
+                    {% set prev_reason = namespace(text='', found=false) %}
+                    {% for t in tracking|reverse %}
+                        {% if not prev_reason.found and t.action in ('Returned to Field Level for Re-enquiry by CVO/DSP', 'Returned to CVO/DSP for Re-enquiry') %}
+                            {% set prev_reason.text = t.comments %}
+                            {% set prev_reason.found = true %}
+                        {% endif %}
+                    {% endfor %}
                     <div class="reenquiry-reference">
                         <div class="reenquiry-reference-head">
-                            <span class="reenquiry-reference-chip">Sent Back for Re-enquiry</span>
+                            <span class="reenquiry-reference-chip">{% if petition.status == 'sent_back_for_reenquiry' %}Sent Back for Re-enquiry{% else %}Re-enquiry Assigned{% endif %}</span>
                             <h5>Previous Report Reference</h5>
                         </div>
+                        {% if prev_reason.text %}
+                        <div style="padding:8px 0 4px;font-size:0.87rem;color:var(--text-main);">
+                            <strong>Reason:</strong> {{ prev_reason.text }}
+                        </div>
+                        {% endif %}
                         <div class="reenquiry-reference-grid">
                             <div class="reenquiry-reference-item">
                                 <span class="reenquiry-reference-label">Conclusion</span>
@@ -1164,7 +1230,74 @@
         </div>
     </div>
 
-    <div class="card">
+    {% if all_reports and all_reports|length > 0 %}
+    <div class="card" id="report-history-section">
+        <div class="card-header">
+            <h3>Enquiry Report History
+                <span class="report-history-count-chip">{{ all_reports|length }} submission{% if all_reports|length != 1 %}s{% endif %}</span>
+            </h3>
+        </div>
+        <div class="report-history-list">
+            {% for ar in all_reports %}
+            {% set rnum = loop.index %}
+            {% set is_latest = loop.last %}
+            <div class="report-history-item {% if is_latest %}report-history-item--latest{% endif %}">
+                <div class="report-history-item-header" onclick="toggleReportHistoryItem(this)">
+                    <span class="report-history-round">Round {{ rnum }}</span>
+                    {% if is_latest %}<span class="report-history-latest-chip">Latest</span>{% endif %}
+                    <span class="report-history-meta">
+                        Submitted by {{ ar.submitted_by_name or 'CI' }}
+                        {% if ar.submitted_at %}&nbsp;·&nbsp;{{ ar.submitted_at.strftime('%d %b %Y %H:%M') }}{% endif %}
+                    </span>
+                    <span class="report-history-toggle-icon">&#9660;</span>
+                </div>
+                <div class="report-history-item-body" style="{{ '' if is_latest else 'display:none;' }}">
+                    {% if ar.report_text %}
+                    <div class="report-history-field">
+                        <span class="report-history-label">Report / Conclusion</span>
+                        <p>{{ ar.report_text }}</p>
+                    </div>
+                    {% endif %}
+                    {% if ar.findings %}
+                    <div class="report-history-field">
+                        <span class="report-history-label">Findings</span>
+                        <p>{{ ar.findings }}</p>
+                    </div>
+                    {% endif %}
+                    {% if ar.recommendation %}
+                    <div class="report-history-field">
+                        <span class="report-history-label">Recommendation</span>
+                        <p>{{ ar.recommendation }}</p>
+                    </div>
+                    {% endif %}
+                    {% if ar.report_file %}
+                    <div class="report-history-field">
+                        <span class="report-history-label">Uploaded Report PDF</span>
+                        {% if all_reports_file_availability.get(ar.report_file) %}
+                        <a href="{{ url_for('enquiry_file', filename=ar.report_file, petition_id=petition.id) }}" target="_blank" class="btn btn-xs btn-outline">Open PDF</a>
+                        {% else %}
+                        <span class="text-muted">File not available on server</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+    function toggleReportHistoryItem(header) {
+        const body = header.nextElementSibling;
+        const icon = header.querySelector('.report-history-toggle-icon');
+        if (!body) return;
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        if (icon) icon.style.transform = open ? '' : 'rotate(180deg)';
+    }
+    </script>
+    {% endif %}
+
+    <div class="card" id="tracking-history-section">
         <div class="card-header"><h3>Tracking History</h3></div>
         <div class="timeline">
             {% for t in tracking %}

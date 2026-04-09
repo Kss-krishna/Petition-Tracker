@@ -2594,6 +2594,35 @@ iframe {
     }
 }
 
+.reenquiry-log-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff7ed;
+    border: 1px solid #fb923c;
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    margin-bottom: 14px;
+    font-size: 0.875rem;
+    color: #9a3412;
+    flex-wrap: wrap;
+}
+.reenquiry-log-icon {
+    font-size: 1.1rem;
+    color: #ea580c;
+    flex-shrink: 0;
+}
+.reenquiry-log-link {
+    margin-left: auto;
+    color: #ea580c;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.reenquiry-log-link:hover {
+    text-decoration: underline;
+}
+
 .action-panel {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--border);
@@ -10250,6 +10279,136 @@ html[data-theme='dark'] .reenquiry-reference-chip {
     color: #dbeafe;
     background: rgba(37, 99, 235, 0.22);
     border-color: rgba(96, 165, 250, 0.45);
+}
+
+html[data-theme='dark'] .reenquiry-log-badge {
+    background: rgba(154, 52, 18, 0.18);
+    border-color: rgba(251, 146, 60, 0.45);
+    color: #fed7aa;
+}
+html[data-theme='dark'] .reenquiry-log-icon,
+html[data-theme='dark'] .reenquiry-log-link {
+    color: #fb923c;
+}
+
+/* ── Re-enquiry row highlight in petition list ── */
+tr.petition-row--reenquiry {
+    border-left: 4px solid #f97316;
+    background: rgba(249, 115, 22, 0.05);
+}
+tr.petition-row--reenquiry:hover {
+    background: rgba(249, 115, 22, 0.10);
+}
+html[data-theme='dark'] tr.petition-row--reenquiry {
+    background: rgba(249, 115, 22, 0.08);
+}
+html[data-theme='dark'] tr.petition-row--reenquiry:hover {
+    background: rgba(249, 115, 22, 0.15);
+}
+
+/* ── Enquiry Report History card ── */
+.report-history-count-chip {
+    display: inline-block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.12);
+    color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 999px;
+    padding: 1px 10px;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+.report-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.report-history-item {
+    border-bottom: 1px solid var(--border);
+}
+.report-history-item:last-child {
+    border-bottom: none;
+}
+.report-history-item--latest > .report-history-item-header {
+    background: rgba(99, 102, 241, 0.06);
+}
+.report-history-item-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    cursor: pointer;
+    user-select: none;
+    flex-wrap: wrap;
+}
+.report-history-item-header:hover {
+    background: rgba(99, 102, 241, 0.05);
+}
+.report-history-round {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    flex-shrink: 0;
+}
+.report-history-latest-chip {
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #16a34a;
+    color: #fff;
+    border-radius: 999px;
+    padding: 2px 9px;
+    flex-shrink: 0;
+}
+.report-history-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    flex: 1;
+}
+.report-history-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: auto;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+.report-history-item-body {
+    padding: 14px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(0,0,0,0.01);
+}
+.report-history-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.report-history-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.report-history-field p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+html[data-theme='dark'] .report-history-count-chip {
+    background: rgba(129, 140, 248, 0.16);
+    color: #a5b4fc;
+    border-color: rgba(129, 140, 248, 0.35);
+}
+html[data-theme='dark'] .report-history-item--latest > .report-history-item-header {
+    background: rgba(99, 102, 241, 0.10);
+}
+html[data-theme='dark'] .report-history-item-body {
+    background: rgba(255,255,255,0.01);
 }
 
 /* Motion tuning: faster + smoother interactions */

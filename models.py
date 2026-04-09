@@ -3107,6 +3107,23 @@ def get_enquiry_report(petition_id):
         conn.close()
 
 
+def get_all_enquiry_reports(petition_id):
+    """Return all enquiry report submissions for a petition, oldest first."""
+    conn = get_db()
+    try:
+        cur = dict_cursor(conn)
+        cur.execute("""
+            SELECT er.*, u.full_name as submitted_by_name
+            FROM enquiry_reports er
+            LEFT JOIN users u ON er.submitted_by = u.id
+            WHERE er.petition_id = %s
+            ORDER BY er.submitted_at ASC
+        """, (petition_id,))
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_latest_enquiry_report_accident_details(petition_ids):
     if not petition_ids:
         return {}
