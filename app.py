@@ -5011,10 +5011,12 @@ def petition_view(petition_id):
         cmd_cgm_users = models.get_cmd_cgm_users()
     
     reenquiry_count = sum(
-        1 for t in (tracking or []) if t.get('status_after') == 'sent_back_for_reenquiry'
+        1 for t in (tracking or [])
+        if t.get('status_after') == 'sent_back_for_reenquiry'
+        or t.get('action') == 'Returned to CVO/DSP for Re-enquiry'
     )
 
-    all_reports = models.get_all_enquiry_reports(petition_id)
+    all_reports = models.get_all_enquiry_reports(petition_id) or []
     all_reports_file_availability = {}
     for ar in all_reports:
         for fkey in ('report_file',):
@@ -5101,6 +5103,13 @@ def petition_action(petition_id):
         elif action == 'send_for_permission':
             if user_role not in ('super_admin', 'po'):
                 flash('Only PO can send petitions for permission routing.', 'danger')
+                return redirect(url_for('petition_view', petition_id=petition_id))
+            petition = models.get_petition_by_id(petition_id)
+            if not petition:
+                flash('Petition not found.', 'danger')
+                return redirect(url_for('petitions_list'))
+            if petition.get('status') not in ('forwarded_to_cvo', 'permission_rejected'):
+                flash('Send for permission is only allowed when the petition is at CVO/DSP or permission was previously rejected.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             models.send_for_permission(petition_id, user_id, comments)
             flash('Petition sent to PO for permission.', 'success')
@@ -5224,6 +5233,9 @@ def petition_action(petition_id):
             if not petition:
                 flash('Petition not found.', 'danger')
                 return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'sent_for_permission':
+                flash('Permission can only be granted when the petition is pending at PO for permission approval.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             target_cvo = (request.form.get('target_cvo') or '').strip()
             organization = (request.form.get('organization') or '').strip().lower()
             enquiry_type_decision = (request.form.get('enquiry_type_decision') or '').strip()
@@ -5342,6 +5354,13 @@ def petition_action(petition_id):
             if user_role not in ('super_admin', 'po'):
                 flash('Only PO can reject permission.', 'danger')
                 return redirect(url_for('petition_view', petition_id=petition_id))
+            petition = models.get_petition_by_id(petition_id)
+            if not petition:
+                flash('Petition not found.', 'danger')
+                return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'sent_for_permission':
+                flash('Permission can only be rejected when the petition is pending at PO for permission approval.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             if cfg_po_reject_reason.get('required') and not comments:
                 flash(f"{cfg_po_reject_reason.get('label', 'Reason for rejection')} is required.", 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
@@ -5424,6 +5443,13 @@ def petition_action(petition_id):
             if not petition:
                 flash('Petition not found.', 'danger')
                 return redirect(url_for('petitions_list'))
+            allowed_submit_statuses = {'assigned_to_inspector', 'enquiry_in_progress', 'sent_back_for_reenquiry'}
+            if petition.get('status') not in allowed_submit_statuses:
+                flash('Enquiry report can only be submitted when the petition is assigned to you for enquiry.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
+            if user_role == 'inspector' and petition.get('assigned_inspector_id') != session['user_id']:
+                flash('You are not the assigned inspector for this petition.', 'danger')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             form_cfg = get_effective_form_field_configs()
             cfg_report_text = form_cfg.get('inspector_report.report_text', DEFAULT_FORM_FIELD_CONFIGS['inspector_report.report_text'])
             cfg_recommendation = form_cfg.get('inspector_report.recommendation', DEFAULT_FORM_FIELD_CONFIGS['inspector_report.recommendation'])
@@ -5602,6 +5628,13 @@ def petition_action(petition_id):
             if user_role not in ('super_admin', 'cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
                 flash('Only CVO/DSP can enter remarks.', 'danger')
                 return redirect(url_for('petition_view', petition_id=petition_id))
+            petition = models.get_petition_by_id(petition_id)
+            if not petition:
+                flash('Petition not found.', 'danger')
+                return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'enquiry_report_submitted':
+                flash('CVO/DSP remarks can only be added after inspector report submission.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             form_cfg = get_effective_form_field_configs()
             cfg_cvo_comments = form_cfg.get('cvo_review.cvo_comments', DEFAULT_FORM_FIELD_CONFIGS['cvo_review.cvo_comments'])
             cfg_cvo_file = form_cfg.get('cvo_review.consolidated_report_file', DEFAULT_FORM_FIELD_CONFIGS['cvo_review.consolidated_report_file'])
@@ -5710,7 +5743,13 @@ def petition_action(petition_id):
                 flash('Only CVO/DSP can request detailed enquiry.', 'danger')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             petition = models.get_petition_by_id(petition_id)
-            if petition and petition.get('enquiry_type') != 'preliminary':
+            if not petition:
+                flash('Petition not found.', 'danger')
+                return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'enquiry_report_submitted':
+                flash('Detailed enquiry can only be requested after inspector report submission.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
+            if petition.get('enquiry_type') != 'preliminary':
                 flash('Detailed enquiry request is allowed only for preliminary petitions.', 'warning')
                 return redirect(url_for('petition_view', petition_id=petition_id))
             cvo_comments = request.form.get('cvo_comments', '').strip()
@@ -5751,6 +5790,9 @@ def petition_action(petition_id):
             if not petition:
                 flash('Petition not found.', 'danger')
                 return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'forwarded_to_po':
+                flash('Final conclusion can only be submitted when the petition is pending at PO.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             efile_no_input = request.form.get('efile_no', '').strip()
             final_conclusion = request.form.get('final_conclusion', '').strip()
             instructions = request.form.get('instructions', '').strip()
@@ -5807,6 +5849,9 @@ def petition_action(petition_id):
             if not petition:
                 flash('Petition not found.', 'danger')
                 return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'forwarded_to_po':
+                flash('Petition can be forwarded to CMD/CGM-HR only when it is pending at PO for conclusion.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             efile_no_input = request.form.get('efile_no', '').strip()
             efile_no, efile_error = resolve_efile_no_for_action(
                 petition,
@@ -5887,6 +5932,16 @@ def petition_action(petition_id):
             if user_role not in ('super_admin', 'cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
                 flash('Only CMD can upload action taken report.', 'danger')
                 return redirect(url_for('petition_view', petition_id=petition_id))
+            petition = models.get_petition_by_id(petition_id)
+            if not petition:
+                flash('Petition not found.', 'danger')
+                return redirect(url_for('petitions_list'))
+            if petition.get('status') != 'action_instructed':
+                flash('Action report can only be submitted when the petition is pending for CMD/CGM-HR action.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
+            if user_role != 'super_admin' and petition.get('current_handler_id') != user_id:
+                flash('You are not the assigned CMD/CGM-HR handler for this petition.', 'danger')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             form_cfg = get_effective_form_field_configs()
             cfg_action_taken = form_cfg.get('cmd_action.action_taken', DEFAULT_FORM_FIELD_CONFIGS['cmd_action.action_taken'])
             cfg_action_file = form_cfg.get('cmd_action.action_report_file', DEFAULT_FORM_FIELD_CONFIGS['cmd_action.action_report_file'])
@@ -5936,6 +5991,9 @@ def petition_action(petition_id):
             if not petition:
                 flash('Petition not found.', 'danger')
                 return redirect(url_for('petitions_list'))
+            if petition.get('status') not in ('forwarded_to_po', 'action_taken'):
+                flash('Lodging is only allowed when petition is pending at PO or after CMD action taken.', 'warning')
+                return redirect(url_for('petition_view', petition_id=petition_id))
             lodge_remarks = request.form.get('lodge_remarks', '').strip()
             if cfg_po_lodge_remarks.get('required') and not lodge_remarks:
                 flash(f"{cfg_po_lodge_remarks.get('label', 'PO Lodge Remarks')} is required.", 'warning')

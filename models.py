@@ -2542,8 +2542,17 @@ def po_send_back_to_cvo_for_reenquiry(petition_id, po_user_id, comments):
         if not cvo_role:
             raise Exception("Target CVO/DSP is not configured for this petition.")
 
-        cur.execute("SELECT id FROM users WHERE role = %s AND is_active = TRUE LIMIT 1", (cvo_role,))
+        # Prefer routing back to the same CVO who last handled it
+        cur.execute("""
+            SELECT id FROM users
+            WHERE id = (
+                SELECT current_handler_id FROM petitions WHERE id = %s
+            ) AND role = %s AND is_active = TRUE
+        """, (petition_id, cvo_role))
         cvo_user = cur.fetchone()
+        if not cvo_user:
+            cur.execute("SELECT id FROM users WHERE role = %s AND is_active = TRUE LIMIT 1", (cvo_role,))
+            cvo_user = cur.fetchone()
         cvo_id = cvo_user['id'] if cvo_user else None
         if not cvo_id:
             raise Exception("No active CVO/DSP user found for this petition.")

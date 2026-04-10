@@ -664,6 +664,8 @@
                             action.value = 'po_send_back_reenquiry';
                             cmdHandlerInput.value = '';
                             cmdGroup.style.display = 'none';
+                            const cmdTextarea = cmdGroup.querySelector('textarea');
+                            if (cmdTextarea) cmdTextarea.required = false;
                             lodgeGroup.style.display = 'none';
                             reenquiryGroup.style.display = '';
                             reenquiryGroup.querySelector('textarea').required = true;
@@ -678,6 +680,8 @@
                             action.value = 'send_to_cmd';
                             cmdHandlerInput.value = selectedUserId;
                             cmdGroup.style.display = '';
+                            const cmdTextarea = cmdGroup.querySelector('textarea');
+                            if (cmdTextarea) cmdTextarea.required = {{ 'true' if f_po_send_cmd_instructions.required else 'false' }};
                             lodgeGroup.style.display = 'none';
                             reenquiryGroup.style.display = 'none';
                             reenquiryGroup.querySelector('textarea').required = false;
@@ -808,7 +812,7 @@
                     <h4>Assign to Field Inspector</h4>
                     {% set po_reenquiry_entry = namespace(comment='', found=false) %}
                     {% for t in tracking|reverse %}
-                        {% if not po_reenquiry_entry.found and t.action == 'Returned to CVO/DSP for Re-enquiry' %}
+                        {% if not po_reenquiry_entry.found and t.action == 'Returned to CVO/DSP for Re-enquiry' and t.status_before == 'forwarded_to_po' %}
                             {% set po_reenquiry_entry.comment = t.comments %}
                             {% set po_reenquiry_entry.found = true %}
                         {% endif %}

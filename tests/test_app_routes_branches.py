@@ -75,6 +75,12 @@ class RichModelsStub:
     def get_enquiry_report(self, _pid):
         return {"id": 99}
 
+    def can_user_access_petition(self, user_id, user_role, cvo_office, petition_id):
+        return True
+
+    def get_all_enquiry_reports(self, _pid):
+        return []
+
     def get_inspectors_by_cvo(self, _uid):
         return [{"id": 8, "full_name": "Inspector"}]
 
@@ -1317,7 +1323,7 @@ def test_api_inspectors_forbidden_and_profile_photo_missing(monkeypatch):
         assert forbidden.status_code == 403
 
         photo = client.get("/profile-photos/missing.png")
-        assert photo.status_code == 404
+        assert photo.status_code == 403
 
 
 def test_misc_auth_and_api_edge_paths(monkeypatch):

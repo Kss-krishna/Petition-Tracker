@@ -68,6 +68,10 @@ def test_petition_new_requires_govt_institution_when_source_is_govt(client):
 
 def test_submit_report_requires_file_when_required(client):
     login_as(client, role="inspector")
+    client.models_stub.get_petition_by_id = lambda pid: {
+        "id": pid, "requires_permission": False,
+        "status": "assigned_to_inspector", "assigned_inspector_id": 1, "efile_no": None,
+    }
     payload = {
         "action": "submit_report",
         "report_text": "Conclusion",
@@ -80,6 +84,10 @@ def test_submit_report_requires_file_when_required(client):
 
 def test_submit_report_accepts_valid_pdf(client):
     login_as(client, role="inspector")
+    client.models_stub.get_petition_by_id = lambda pid: {
+        "id": pid, "requires_permission": False,
+        "status": "assigned_to_inspector", "assigned_inspector_id": 1, "efile_no": None,
+    }
     payload = {
         "action": "submit_report",
         "report_text": "Conclusion",
