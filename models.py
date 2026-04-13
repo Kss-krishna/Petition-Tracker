@@ -1390,11 +1390,29 @@ def search_petitions(user_id, user_role, cvo_office, query, search_type='all', l
             access_filter = 'TRUE'
             access_params = []
         elif user_role == 'po':
-            access_filter = 'TRUE'
-            access_params = []
+            # Mirror get_petitions_for_user: PO sees petitions in workflow
+            # stages they own and any petition where they are the handler.
+            access_filter = (
+                "(p.status IN ('sent_for_permission','permission_approved',"
+                "'permission_rejected','forwarded_to_po','forwarded_to_jmd',"
+                "'conclusion_given','action_instructed','action_taken',"
+                "'lodged','closed','sent_back_for_reenquiry')"
+                " OR p.current_handler_id = %s)"
+            )
+            access_params = [user_id]
         elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
             access_filter = 'p.target_cvo = %s'
             access_params = [cvo_office]
+        elif user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
+            _cmd_office_map = {
+                'cmd_apspdcl': 'apspdcl', 'cmd_apepdcl': 'apepdcl',
+                'cmd_apcpdcl': 'apcpdcl', 'cgm_hr_transco': 'headquarters',
+            }
+            access_filter = (
+                "p.status IN ('action_instructed','action_taken')"
+                " AND (p.current_handler_id = %s OR p.target_cvo = %s)"
+            )
+            access_params = [user_id, _cmd_office_map.get(user_role, '')]
         elif user_role == 'inspector':
             access_filter = 'p.assigned_inspector_id = %s'
             access_params = [user_id]
@@ -1441,7 +1459,7 @@ def get_petition_stats_for_chatbot(user_id, user_role, cvo_office):
     conn = get_db()
     try:
         cur = dict_cursor(conn)
-        if user_role in ('super_admin', 'po'):
+        if user_role == 'super_admin':
             cur.execute("""
                 SELECT COUNT(*) as total,
                        COUNT(*) FILTER (WHERE status = 'received') as received,
@@ -1449,6 +1467,22 @@ def get_petition_stats_for_chatbot(user_id, user_role, cvo_office):
                        COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
                 FROM petitions
             """)
+        elif user_role == 'po':
+            # Mirror get_petitions_for_user scoping — PO does not own
+            # early-stage petitions (received / forwarded_to_cvo).
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions
+                WHERE status IN ('sent_for_permission','permission_approved',
+                                 'permission_rejected','forwarded_to_po',
+                                 'forwarded_to_jmd','conclusion_given',
+                                 'action_instructed','action_taken',
+                                 'lodged','closed','sent_back_for_reenquiry')
+                   OR current_handler_id = %s
+            """, (user_id,))
         elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
             cur.execute("""
                 SELECT COUNT(*) as total,
@@ -1457,6 +1491,20 @@ def get_petition_stats_for_chatbot(user_id, user_role, cvo_office):
                        COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
                 FROM petitions WHERE target_cvo = %s
             """, (cvo_office,))
+        elif user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
+            _cmd_office_map = {
+                'cmd_apspdcl': 'apspdcl', 'cmd_apepdcl': 'apepdcl',
+                'cmd_apcpdcl': 'apcpdcl', 'cgm_hr_transco': 'headquarters',
+            }
+            cur.execute("""
+                SELECT COUNT(*) as total,
+                       COUNT(*) FILTER (WHERE status = 'received') as received,
+                       COUNT(*) FILTER (WHERE status IN ('closed','lodged')) as closed,
+                       COUNT(*) FILTER (WHERE status NOT IN ('closed','lodged')) as open
+                FROM petitions
+                WHERE status IN ('action_instructed','action_taken')
+                  AND (current_handler_id = %s OR target_cvo = %s)
+            """, (user_id, _cmd_office_map.get(user_role, '')))
         elif user_role == 'inspector':
             cur.execute("""
                 SELECT COUNT(*) as total,
@@ -1532,11 +1580,29 @@ def get_recent_updates_for_chatbot(user_id, user_role, cvo_office, limit=8):
             access_filter = "TRUE"
             access_params = []
         elif user_role == 'po':
-            access_filter = "TRUE"
-            access_params = []
+            # Mirror get_petitions_for_user: PO must not see early-stage
+            # petitions (received / forwarded_to_cvo) via the chatbot.
+            access_filter = (
+                "(p.status IN ('sent_for_permission','permission_approved',"
+                "'permission_rejected','forwarded_to_po','forwarded_to_jmd',"
+                "'conclusion_given','action_instructed','action_taken',"
+                "'lodged','closed','sent_back_for_reenquiry')"
+                " OR p.current_handler_id = %s)"
+            )
+            access_params = [user_id]
         elif user_role in ('cvo_apspdcl', 'cvo_apepdcl', 'cvo_apcpdcl', 'dsp'):
             access_filter = "p.target_cvo = %s"
             access_params = [cvo_office]
+        elif user_role in ('cmd_apspdcl', 'cmd_apepdcl', 'cmd_apcpdcl', 'cgm_hr_transco'):
+            _cmd_office_map = {
+                'cmd_apspdcl': 'apspdcl', 'cmd_apepdcl': 'apepdcl',
+                'cmd_apcpdcl': 'apcpdcl', 'cgm_hr_transco': 'headquarters',
+            }
+            access_filter = (
+                "p.status IN ('action_instructed','action_taken')"
+                " AND (p.current_handler_id = %s OR p.target_cvo = %s)"
+            )
+            access_params = [user_id, _cmd_office_map.get(user_role, '')]
         elif user_role == 'inspector':
             access_filter = "p.assigned_inspector_id = %s"
             access_params = [user_id]
