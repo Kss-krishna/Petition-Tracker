@@ -1,25 +1,30 @@
 # Generated from: pip install -r requirements.txt && pip freeze > requirements-lock.txt
-# NOTE: rapidfuzz and other packages must be installed first:
-#   pip install -r requirements.txt && pip freeze > requirements-lock.txt
+# Last updated: 2026-04-13
 blinker==1.9.0
+certifi==2026.2.25
+charset-normalizer==3.4.4
 click==8.3.1
 colorama==0.4.6
 coverage==7.13.4
 et_xmlfile==2.0.0
-Flask==3.1.2
+Flask==3.0.3
+idna==3.11
 iniconfig==2.3.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
-openpyxl==3.1.5
+openpyxl==3.1.2
 packaging==26.0
 pluggy==1.6.0
 psycopg2-binary==2.9.11
 Pygments==2.19.2
 pytest==9.0.2
 pytest-cov==7.0.0
-python-dotenv==1.2.1
+python-dotenv==1.0.0
+rapidfuzz==3.14.5
+requests==2.31.0
 ruff==0.15.1
 typing_extensions==4.15.0
+urllib3==2.6.3
 waitress==3.0.2
-Werkzeug==3.1.5
+Werkzeug==3.0.3
