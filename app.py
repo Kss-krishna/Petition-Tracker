@@ -3208,9 +3208,11 @@ def login_verify_otp():
         {
             'send_login_otp': _send_login_otp,
             'verify_login_otp': _verify_login_otp,
+            'check_internal_credentials': _check_internal_credentials,
             'get_user_by_username': _get_user_by_username_for_auth,
             'clear_legacy_login_captcha_session': _clear_legacy_login_captcha_session,
             'clear_login_failures': _clear_login_failures,
+            'register_login_failure': _register_login_failure,
             'activate_login_session': _activate_login_session,
             'begin_forced_password_change': _begin_forced_password_change,
         }
@@ -3329,21 +3331,6 @@ def first_login_setup():
                            is_super_admin=is_super_admin)
 
 
-def _check_user_for_recovery(username: str, mobile: str):
-    """Call APTRANSCO /checkCred to confirm the account exists before issuing a reset OTP.
-    Skips gracefully if the API is not configured (dev/test environments) or if the
-    endpoint is unavailable on this server (e.g. quality server without /checkCred)."""
-    if app.config.get('TESTING') or not _internal_auth_api.is_configured():
-        return APIResult(True, message='User verified (API not configured).', payload={'source': 'local'})
-    result = _internal_auth_api.check_user_for_recovery(username, mobile)
-    # If the endpoint is simply not deployed on this server, skip the check
-    # rather than blocking the user entirely.
-    if not result.ok and result.reason == 'server_busy':
-        app.logger.warning('checkCred unavailable (%s) – skipping pre-verification for %s', result.message, username)
-        return APIResult(True, message='User verified (checkCred unavailable).', payload={'source': 'local'})
-    return result
-
-
 def _invalidate_all_user_sessions(user_id: int) -> None:
     """Bump the session version so all existing server-sessions are rejected,
     then hard-delete any server-side session rows for the user."""
@@ -3361,11 +3348,6 @@ def forgot_password_request():
         {
             'get_user_by_username': _get_user_by_username_for_auth,
             'send_login_otp': _send_login_otp,
-            # Wire up APTRANSCO /checkCred pre-verification so an OTP is only
-            # dispatched after the (username, mobile) pair is confirmed in the
-            # upstream identity store.  _check_user_for_recovery skips gracefully
-            # when the API is not configured (dev / test environments).
-            'check_user_identity': _check_user_for_recovery,
         }
     )
 
@@ -3399,8 +3381,7 @@ def forgot_password_set():
             'flash_internal_error': flash_internal_error,
             'update_password_only': models.update_password_only,
             'invalidate_user_sessions': _invalidate_all_user_sessions,
-            'activate_login_session': _activate_login_session,
-            'get_user_by_id': models.get_user_by_id,
+            'invalidate_current_session': _invalidate_current_session,
         }
     )
 
