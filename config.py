@@ -117,8 +117,11 @@ class Config:
         self.PETITION_IP_RATE_LIMIT_BLOCK_SECONDS = int(os.environ.get('PETITION_IP_RATE_LIMIT_BLOCK_SECONDS', '180'))
 
         # HTTPS redirect — redirect plain-HTTP requests to HTTPS at the app level.
-        # Enable in production when not handled by a reverse proxy already.
-        self.FORCE_HTTPS = _env_bool('FORCE_HTTPS', self.IS_PRODUCTION)
+        # Default: False.  Only enable when Flask itself terminates TLS (rare).
+        # Behind a reverse proxy (Apache / nginx) leave this OFF and let the
+        # proxy handle HTTP→HTTPS redirects.  If you must enable it behind a
+        # proxy, also set TRUST_PROXY_HEADERS=1 so Flask can detect HTTPS.
+        self.FORCE_HTTPS = _env_bool('FORCE_HTTPS', False)
 
         # Logging — structured JSON logs written to a rotating file.
         self.LOG_FILE = (os.environ.get('LOG_FILE') or '').strip() or None

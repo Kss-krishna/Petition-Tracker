@@ -2527,12 +2527,16 @@ def _security_before_request():
     if config.FORCE_HTTPS and not request.is_secure:
         if not app.config.get('TESTING') and request.method != 'HEAD':
             url = request.url.replace('http://', 'https://', 1)
+            # Use 307 for non-GET methods to preserve the request method
+            # (a 301 causes browsers to convert POST to GET, losing form data).
+            code = 307 if request.method != 'GET' else 301
             log_security_event(
                 'web.http_to_https_redirect',
                 severity='info',
                 target_url=url,
+                redirect_code=code,
             )
-            return redirect(url, code=301)
+            return redirect(url, code=code)
 
     _queue_proxy_mismatch_diagnostics()
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
