@@ -1,0 +1,334 @@
+================================================================================
+  NIGAA v4 — PRODUCTION DEPLOYMENT GUIDE
+  Apache + Waitress + PostgreSQL Setup
+  Last Updated: April 21, 2026
+================================================================================
+
+
+------------------------------------------------------------------------
+SECTION 1: WHY APACHE CAUSES PROBLEMS WITHOUT PROPER CONFIG
+------------------------------------------------------------------------
+
+Your app uses Waitress (serve.py / wsgi.py) behind Apache as a reverse
+proxy. Apache terminates HTTPS externally and forwards plain HTTP
+internally to Waitress on port 5000.
+
+Flask then sees plain HTTP — which causes these cascading failures:
+
+  PROBLEM                        ROOT CAUSE                    SYMPTOM
+  ─────────────────────────────────────────────────────────────────────
+  Session cookie dropped         SESSION_COOKIE_SECURE=1 but   Users get logged
+                                 Flask sees http://             out every request
+
+  url_for() generates http://    Flask doesn't know it's       Broken redirects
+  links                          behind HTTPS                   after login
+
+  __Host- cookie rejected        Browser rejects Secure cookie Login fails
+                                 over plain HTTP                silently
+
+  Client IP shows 127.0.0.1     X-Forwarded-For not trusted   Rate limiting
+                                                                broken
+
+  Login rate limit broken        Wrong client IP detected       Brute force
+                                                                protection fails
+
+
+------------------------------------------------------------------------
+SECTION 2: YOUR .env — WHAT TO CHANGE FOR PRODUCTION
+------------------------------------------------------------------------
+
+STEP 1 — Enable production mode (currently commented out!):
+  BEFORE:  # APP_ENV=production
+  AFTER:   APP_ENV=production
+
+STEP 2 — Switch to production database:
+  BEFORE:  DB_HOST=localhost
+           DB_PORT=5433
+           DB_NAME=postgres
+           DB_PASSWORD=Jmd@1235
+
+  AFTER:   DB_HOST=10.96.76.135
+           DB_PORT=5432
+           DB_NAME=postgres
+           DB_USER=postgres
+           DB_PASSWORD="$$erver@&aps!"
+           DB_SCHEMA=vigilance_tracker
+           TRUSTED_INTERNAL_HOSTS=10.96.76.135
+
+STEP 3 — Trust Apache's forwarded headers (THE KEY FIX for proxy issues):
+  BEFORE:  TRUST_PROXY_HEADERS=0
+
+  AFTER:   TRUST_PROXY_HEADERS=1
+           PROXY_FIX_X_FOR=1
+           PROXY_FIX_X_PROTO=1
+           PROXY_FIX_X_HOST=1
+           PROXY_FIX_X_PORT=1
+
+STEP 4 — Enable secure session cookie:
+  BEFORE:  SESSION_COOKIE_SECURE=0
+
+  AFTER:   SESSION_COOKIE_SECURE=1
+           SESSION_COOKIE_NAME=__Host-nigaa_session
+           SESSION_COOKIE_SAMESITE=Lax
+           SESSION_COOKIE_DOMAIN=
+           SESSION_COOKIE_PATH=/
+
+STEP 5 — Keep FORCE_HTTPS off (Apache handles redirects, not Flask):
+  KEEP:    FORCE_HTTPS=0
+
+STEP 6 — Waitress should only listen on localhost in production:
+  BEFORE:  HOST=0.0.0.0
+
+  AFTER:   HOST=127.0.0.1
+
+STEP 7 — Add session timeout settings (missing from current .env):
+  ADD:     SESSION_LIFETIME_MINUTES=60
+           SESSION_INACTIVITY_MINUTES=30
+           SESSION_ABSOLUTE_HOURS=24
+           MAX_CONCURRENT_SESSIONS=3
+           REVOKE_OTHER_SESSIONS_ON_LOGIN=0
+
+
+------------------------------------------------------------------------
+SECTION 3: FULL PRODUCTION .env (READY TO USE)
+------------------------------------------------------------------------
+
+Copy this block and replace your current .env content on the server:
+
+  APP_ENV=production
+  SECRET_KEY=CKkOdU6AvybXqcGQDnhxjlaTqq8k1rqlVFDRzn3YtvPmclO6stGcJK2VEpyuqafnBSavOwSzPW1GJPzzUJi_vw
+
+  DB_HOST=10.96.76.135
+  DB_PORT=5432
+  DB_NAME=postgres
+  DB_USER=postgres
+  DB_PASSWORD="$$erver@&aps!"
+  DB_SSLMODE=prefer
+  DB_CONNECT_TIMEOUT=10
+  DB_SCHEMA=vigilance_tracker
+  TRUSTED_INTERNAL_HOSTS=10.96.76.135
+
+  HOST=127.0.0.1
+  PORT=5000
+  FLASK_DEBUG=0
+  FORCE_HTTPS=0
+
+  TRUST_PROXY_HEADERS=1
+  PROXY_FIX_X_FOR=1
+  PROXY_FIX_X_PROTO=1
+  PROXY_FIX_X_HOST=1
+  PROXY_FIX_X_PORT=1
+
+  SESSION_COOKIE_SECURE=1
+  SESSION_COOKIE_NAME=__Host-nigaa_session
+  SESSION_COOKIE_SAMESITE=Lax
+  SESSION_COOKIE_DOMAIN=
+  SESSION_COOKIE_PATH=/
+  SESSION_LIFETIME_MINUTES=60
+  SESSION_INACTIVITY_MINUTES=30
+  SESSION_ABSOLUTE_HOURS=24
+  MAX_CONCURRENT_SESSIONS=3
+  REVOKE_OTHER_SESSIONS_ON_LOGIN=0
+
+  LOGIN_RATE_LIMIT_WINDOW_SECONDS=600
+  LOGIN_RATE_LIMIT_MAX_ATTEMPTS=8
+  LOGIN_RATE_LIMIT_BLOCK_SECONDS=900
+
+  LOG_FILE=logs/app.log
+  LOG_LEVEL=INFO
+
+  BRAND_NAME=Nigaa
+  BRAND_SUBTITLE=Vigilance Wing
+  BRAND_LOGO_FILE=img/nigaa-logo.svg
+  BRAND_LOGO_FALLBACK=img/aptransco-logo-fallback.svg
+
+  FILE_STORAGE_PATH=/var/www/nigaa/uploads
+
+
+------------------------------------------------------------------------
+SECTION 4: APACHE VIRTUALHOST CONFIG (ON THE SERVER)
+------------------------------------------------------------------------
+
+Enable required Apache modules first (run on Linux server):
+  sudo a2enmod proxy proxy_http headers ssl rewrite
+  sudo systemctl restart apache2
+
+Then create/edit your Apache site config
+(/etc/apache2/sites-available/nigaa.conf):
+
+  # Redirect HTTP to HTTPS — Apache handles this, NOT Flask
+  <VirtualHost *:80>
+      ServerName yourdomain.com
+      Redirect permanent / https://yourdomain.com/
+  </VirtualHost>
+
+  # HTTPS — terminates SSL, forwards to Waitress
+  <VirtualHost *:443>
+      ServerName yourdomain.com
+
+      SSLEngine on
+      SSLCertificateFile    /etc/ssl/certs/yourdomain.crt
+      SSLCertificateKeyFile /etc/ssl/private/yourdomain.key
+
+      # Forward to Waitress running on localhost:5000
+      ProxyPreserveHost On
+      ProxyPass        / http://127.0.0.1:5000/
+      ProxyPassReverse / http://127.0.0.1:5000/
+
+      # These 4 headers tell Flask it is behind HTTPS
+      # Required for TRUST_PROXY_HEADERS=1 to work correctly
+      RequestHeader set X-Forwarded-Proto "https"
+      RequestHeader set X-Forwarded-Port  "443"
+      RequestHeader set X-Forwarded-Host  "%{HTTP_HOST}s"
+
+      # Let Apache build the correct X-Forwarded-For chain
+      ProxyAddHeaders On
+
+      # Security headers
+      Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains"
+      Header always set X-Content-Type-Options "nosniff"
+      Header always set X-Frame-Options "SAMEORIGIN"
+  </VirtualHost>
+
+Enable and test:
+  sudo a2ensite nigaa.conf
+  sudo apache2ctl configtest
+  sudo systemctl reload apache2
+
+
+------------------------------------------------------------------------
+SECTION 5: STARTING WAITRESS ON THE SERVER
+------------------------------------------------------------------------
+
+Development (local):
+  python app.py
+  -- OR --
+  python serve.py
+
+Production (on server, always use this):
+  python serve.py
+  -- OR --
+  waitress-serve --host=127.0.0.1 --port=5000 wsgi:app
+
+Run as a background service (Linux systemd):
+
+  Create /etc/systemd/system/nigaa.service:
+
+    [Unit]
+    Description=Nigaa Petition Tracker
+    After=network.target
+
+    [Service]
+    User=www-data
+    WorkingDirectory=/var/www/nigaa
+    EnvironmentFile=/var/www/nigaa/.env
+    ExecStart=/var/www/nigaa/.venv/bin/waitress-serve --host=127.0.0.1 --port=5000 wsgi:app
+    Restart=always
+    RestartSec=5
+
+    [Install]
+    WantedBy=multi-user.target
+
+  Then:
+    sudo systemctl daemon-reload
+    sudo systemctl enable nigaa
+    sudo systemctl start nigaa
+    sudo systemctl status nigaa
+
+
+------------------------------------------------------------------------
+SECTION 6: PRE-LAUNCH CHECKLIST
+------------------------------------------------------------------------
+
+  .env Changes
+  [ ] APP_ENV=production  (currently commented out in your .env!)
+  [ ] DB_HOST=10.96.76.135  (switch from localhost)
+  [ ] DB_PORT=5432  (switch from 5433)
+  [ ] DB_PASSWORD="$$erver@&aps!"  (production password)
+  [ ] TRUSTED_INTERNAL_HOSTS=10.96.76.135  (uncomment the line)
+  [ ] TRUST_PROXY_HEADERS=1  (THE KEY FIX — currently 0)
+  [ ] SESSION_COOKIE_SECURE=1  (currently 0)
+  [ ] SESSION_COOKIE_NAME=__Host-nigaa_session
+  [ ] HOST=127.0.0.1  (stop listening on 0.0.0.0)
+  [ ] SESSION_INACTIVITY_MINUTES=30  (add this line)
+  [ ] FILE_STORAGE_PATH=/var/www/nigaa/uploads  (absolute path)
+
+  Apache Server
+  [ ] mod_proxy enabled  (a2enmod proxy proxy_http)
+  [ ] mod_headers enabled  (a2enmod headers)
+  [ ] mod_ssl enabled  (a2enmod ssl)
+  [ ] VirtualHost has ProxyPass pointing to 127.0.0.1:5000
+  [ ] VirtualHost has RequestHeader set X-Forwarded-Proto "https"
+  [ ] VirtualHost has RequestHeader set X-Forwarded-Port "443"
+  [ ] HTTP VirtualHost redirects to HTTPS
+  [ ] SSL certificate installed and valid
+
+  Application
+  [ ] Waitress is running (not python app.py)
+  [ ] Uploads folder exists at FILE_STORAGE_PATH with write permissions
+  [ ] logs/ folder exists with write permissions
+  [ ] Database connection tested (python -c "import models; models.get_db()")
+  [ ] Admin user exists (python create_admin.py)
+
+  Browser Verification (after go-live)
+  [ ] Login works and session persists across pages
+  [ ] Cookie shows Secure + HttpOnly + SameSite=Lax in browser DevTools
+  [ ] No http:// links generated (check url_for redirects)
+  [ ] Client IP visible in logs (not 127.0.0.1)
+  [ ] Session expires after inactivity timeout
+
+
+------------------------------------------------------------------------
+SECTION 7: HOW TO CHANGE THE DATABASE SERVER IN FUTURE
+------------------------------------------------------------------------
+
+When you need to move to a different DB server (e.g., new IP):
+
+  1. Update in .env:
+       DB_HOST=<new_ip>
+       TRUSTED_INTERNAL_HOSTS=<new_ip>
+
+  2. If not on internal network (public/cloud), also set:
+       DB_SSLMODE=require
+
+  3. Restart Waitress:
+       sudo systemctl restart nigaa
+
+  4. Verify:
+       sudo systemctl status nigaa
+       -- Check logs for DB connection errors --
+       tail -f logs/app.log
+
+
+------------------------------------------------------------------------
+SECTION 8: QUICK TROUBLESHOOTING
+------------------------------------------------------------------------
+
+  SYMPTOM: Users get logged out on every page
+  FIX:     Check TRUST_PROXY_HEADERS=1 and SESSION_COOKIE_SECURE=1
+           Verify Apache sends X-Forwarded-Proto: https
+
+  SYMPTOM: Login page redirects to http:// after login
+  FIX:     Check TRUST_PROXY_HEADERS=1
+           Check Apache has RequestHeader set X-Forwarded-Proto "https"
+
+  SYMPTOM: App starts but crashes on first request
+  FIX:     Check APP_ENV=production is set
+           Check DB_HOST and DB_PASSWORD are correct
+           Run: python -c "from app import app; print('OK')"
+
+  SYMPTOM: 502 Bad Gateway from Apache
+  FIX:     Waitress is not running — start with: python serve.py
+           Check PORT=5000 matches Apache ProxyPass port
+
+  SYMPTOM: File uploads fail or not found
+  FIX:     Check FILE_STORAGE_PATH is absolute and directory exists
+           Check www-data has write permissions on that folder
+
+  SYMPTOM: RuntimeError about DB_SSLMODE on startup
+  FIX:     Add TRUSTED_INTERNAL_HOSTS=10.96.76.135 to .env
+           OR set DB_SSLMODE=require
+
+================================================================================
+  END OF DOCUMENT
+================================================================================
